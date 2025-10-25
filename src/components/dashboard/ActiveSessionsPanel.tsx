@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 
 type SessionItem = {
@@ -36,17 +35,17 @@ export default function ActiveSessionsPanel() {
 
   if (loading) {
     return (
-      <Card className="p-4 bg-zinc-800 border border-zinc-700">
+      <div className="p-4 bg-zinc-800 border border-zinc-700 rounded-xl">
         Caricamento sessioni…
-      </Card>
+      </div>
     );
   }
 
   if (!items.length) {
     return (
-      <Card className="p-4 bg-zinc-800 border border-zinc-700">
+      <div className="p-4 bg-zinc-800 border border-zinc-700 rounded-xl">
         <div className="text-sm text-zinc-300">Nessuna sessione attiva.</div>
-      </Card>
+      </div>
     );
   }
 
@@ -59,9 +58,9 @@ export default function ActiveSessionsPanel() {
         const max = s.maxPlayers ?? 5;
 
         return (
-          <Card
+          <div
             key={s.id}
-            className="p-4 bg-zinc-800 border border-zinc-700 flex items-start justify-between gap-4"
+            className="p-4 bg-zinc-800 border border-zinc-700 rounded-xl flex items-start justify-between gap-4"
           >
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -86,7 +85,7 @@ export default function ActiveSessionsPanel() {
                 <Button variant="primary">Entra</Button>
               </Link>
             </div>
-          </Card>
+          </div>
         );
       })}
     </div>
