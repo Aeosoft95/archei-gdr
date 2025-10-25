@@ -1,31 +1,36 @@
+// src/pages/api/user/change-password.ts
 import type { NextApiRequest, NextApiResponse } from "next";
-import { getServerSession } from "next-auth";
-import { authOptions } from "../auth/[...nextauth]";
 import { connectMongo } from "../../../lib/mongodb";
 import User from "../../../models/User";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs"; // <-- bcryptjs
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const session = await getServerSession(req, res, authOptions);
-  if (!session?.user) return res.status(401).json({ error: "Not authenticated" });
-
-  const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+  const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) return res.status(400).json({ error: "Missing fields" });
-  if (newPassword.length < 6) return res.status(400).json({ error: "Password too short" });
 
-  await connectMongo();
-  const userId = (session.user as any).id;
-  const user = await User.findById(userId);
-  if (!user) return res.status(404).json({ error: "User not found" });
+  try {
+    await connectMongo();
 
-  const ok = await bcrypt.compare(currentPassword, user.password);
-  if (!ok) return res.status(403).json({ error: "Current password is incorrect" });
+    // recupera utente dalla sessione/jwt come fai di solito
+    // esempio placeholder (adatta alla tua auth):
+    const userId = (req as any).user?.id || (req as any).token?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  const hash = await bcrypt.hash(newPassword, 12);
-  user.password = hash;
-  await user.save();
+    const user = await User.findById(userId).select("+password");
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-  return res.status(200).json({ ok: true });
+    const ok = await bcrypt.compare(currentPassword, user.password);
+    if (!ok) return res.status(401).json({ error: "Invalid current password" });
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    user.password = hash;
+    await user.save();
+
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error("change-password error:", e);
+    return res.status(500).json({ error: "Internal error" });
+  }
 }
