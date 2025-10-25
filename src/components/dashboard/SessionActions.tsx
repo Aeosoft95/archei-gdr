@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/router"; // ⬅️ Pages Router
+import { useRouter } from "next/router"; // Pages Router ✅
 import { Button } from "../ui/button";
 
 type Props = {
@@ -34,19 +34,13 @@ export function SessionActions({ onCreated }: Props) {
       if (!res.ok) throw new Error(data?.error || `Errore ${res.status}`);
 
       const path: string = data.path || `/table/${data.inviteCode}`;
-      // callback esterna (se passata)
+
+      // callback esterna (se presente)
       onCreated?.(path);
 
-      // redirect principale
-      if (path) {
-        // primo tentativo: router.push (Pages Router)
-        try {
-          await router.push(path);
-        } catch {
-          // fallback hard se qualcosa blocca
-          window.location.assign(path);
-        }
-      }
+      // 🔥 redirect HARD per evitare qualsiasi problema di routing
+      window.location.assign(path);
+      return;
     } catch (err: any) {
       console.error("Create session failed:", err);
       setError(err.message || "Errore sconosciuto");
@@ -67,13 +61,14 @@ export function SessionActions({ onCreated }: Props) {
           disabled={creating}
         />
 
-        <Button variant="primary" onClick={handleCreate} disabled={creating}>
+        <Button variant="primary" onClick={handleCreate} disabled={creating} type="button">
           ➕ {creating ? "Creazione..." : "Crea Sessione"}
         </Button>
 
         <Button
           variant="secondary"
           onClick={() => router.push("/sessions/join")}
+          type="button"
         >
           🔗 Unisciti
         </Button>
