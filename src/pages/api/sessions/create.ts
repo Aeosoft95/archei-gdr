@@ -10,15 +10,24 @@ import mongoose from "mongoose";
 export const config = { runtime: "nodejs", api: { bodyParser: true } };
 
 function genInviteCode() {
-  return crypto.randomBytes(4).toString("base64").replace(/[^A-Z0-9]/gi, "").slice(0, 6).toUpperCase();
+  return crypto
+    .randomBytes(4)
+    .toString("base64")
+    .replace(/[^A-Z0-9]/gi, "")
+    .slice(0, 6)
+    .toUpperCase();
 }
 
 function extractPayload(req: NextApiRequest) {
   const b = (req.body ?? {}) as Record<string, any>;
   const rawTitle =
-    typeof b.title === "string" ? b.title :
-    typeof b.name === "string" ? b.name :
-    typeof b.sessionTitle === "string" ? b.sessionTitle : "";
+    typeof b.title === "string"
+      ? b.title
+      : typeof b.name === "string"
+      ? b.name
+      : typeof b.sessionTitle === "string"
+      ? b.sessionTitle
+      : "";
   const title = rawTitle.trim();
 
   const description = typeof b.description === "string" ? b.description : "";
@@ -55,7 +64,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { title, description, date, maxPlayers, tags, visibility } = extractPayload(req);
     if (!title) {
-      return res.status(400).json({ error: "Titolo obbligatorio", details: { step: "payload", bodyKeys: Object.keys(req.body ?? {}) } });
+      return res
+        .status(400)
+        .json({ error: "Titolo obbligatorio", details: { step: "payload", bodyKeys: Object.keys(req.body ?? {}) } });
     }
 
     try {
@@ -85,13 +96,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           tags,
           visibility,
           ownerId: new mongoose.Types.ObjectId(userId),
+          // FIX per indice unico esistente "code_1"
+          code: inviteCode,
           inviteCode,
           participants: [new mongoose.Types.ObjectId(userId)],
         });
         break;
       } catch (e: any) {
-        if (e?.code === 11000 && e?.keyPattern?.inviteCode) {
-          // collisione unique
+        if (e?.code === 11000 && (e?.keyPattern?.inviteCode || e?.keyPattern?.code)) {
+          // collisione unique su inviteCode o code → rigenera e riprova
           inviteCode = genInviteCode();
           continue;
         }
