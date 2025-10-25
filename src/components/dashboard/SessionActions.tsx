@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/router"; // ⬅️ Pages Router
 import { Button } from "../ui/button";
 
 type Props = {
@@ -30,12 +30,23 @@ export function SessionActions({ onCreated }: Props) {
         body: JSON.stringify({ title }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Errore creazione");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Errore ${res.status}`);
 
-      const path = data.path || `/table/${data.inviteCode}`;
+      const path: string = data.path || `/table/${data.inviteCode}`;
+      // callback esterna (se passata)
       onCreated?.(path);
-      router.push(path);
+
+      // redirect principale
+      if (path) {
+        // primo tentativo: router.push (Pages Router)
+        try {
+          await router.push(path);
+        } catch {
+          // fallback hard se qualcosa blocca
+          window.location.assign(path);
+        }
+      }
     } catch (err: any) {
       console.error("Create session failed:", err);
       setError(err.message || "Errore sconosciuto");
