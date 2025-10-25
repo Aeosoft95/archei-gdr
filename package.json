@@ -4,14 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "concurrently \"pnpm run dev:web\" \"pnpm run dev:ws\"",
     "dev:web": "next dev -H 0.0.0.0 -p 3000",
     "dev:ws": "tsx server/ws-server.ts",
+    "seed": "tsx server/seed.ts",
     "token": "node -e \"console.log(require('jsonwebtoken').sign({id:'u1',name:'Andrea'}, process.env.JWT_SECRET||'changeme', {expiresIn:'1h'}))\"",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.6.2",
     "next": "14.2.5",
@@ -28,6 +32,7 @@
     "@types/react": "19.2.2",
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.19",
+    "concurrently": "^9.0.0",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.10",
     "tsx": "^4.19.0",
