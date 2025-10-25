@@ -1,0 +1,33 @@
+{
+  "name": "archei-companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "next dev -H 0.0.0.0 -p 3000",
+    "dev:ws": "tsx server/ws-server.ts",
+    "token": "node -e \"console.log(require('jsonwebtoken').sign({id:'u1',name:'Andrea'}, process.env.JWT_SECRET||'changeme', {expiresIn:'1h'}))\"",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.6.2",
+    "next": "14.2.5",
+    "next-auth": "^4.24.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-icons": "^5.5.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.9.1",
+    "@types/react": "19.2.2",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}
