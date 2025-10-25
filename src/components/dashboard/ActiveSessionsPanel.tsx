@@ -11,10 +11,11 @@ type SessionItem = {
   title: string;
   description?: string;
   inviteCode?: string;
-  code?: string; // compat vecchio indice
+  code?: string;
   ownerId: string;
   participants?: string[];
   maxPlayers?: number;
+  isGM?: boolean;
 };
 
 export default function ActiveSessionsPanel() {
@@ -65,17 +66,18 @@ export default function ActiveSessionsPanel() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <div className="font-medium">{s.title}</div>
-                {/* se sei GM metti un badge (il backend può anche arricchire la risposta,
-                    qui teniamo semplice: il GM è l'owner) */}
-                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                  GM
-                </span>
+                {s.isGM && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 uppercase">
+                    GM
+                  </span>
+                )}
               </div>
               {s.description ? (
                 <div className="text-sm text-zinc-400">{s.description}</div>
               ) : null}
               <div className="text-xs text-zinc-400">
-                Giocatori: {players}/{max} · Invito: <span className="font-mono">{code}</span>
+                Giocatori: {players}/{max} · Invito:{" "}
+                <span className="font-mono">{code}</span>
               </div>
             </div>
 
