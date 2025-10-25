@@ -1,88 +1,76 @@
 "use client";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 
-type Session = {
+type SessionItem = {
   id: string;
-  name: string;
-  description: string;
-  maxPlayers: number;
-  playersCount: number;
-  code: string;
+  title: string;
+  visibility: "public" | "private";
+  ownerId: string;
+  date: string | null;
+  createdAt: string;
 };
 
-export function ActiveSessionsPanel() {
-  const [sessions, setSessions] = useState<Session[]>([]);
+export default function ActiveSessionsPanel() {
+  const [items, setItems] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
 
-  // 🔄 Carica le sessioni attive dal server
   async function load() {
     try {
       setLoading(true);
-      const r = await fetch("/api/sessions/list");
-      const data = await r.json();
-      if (r.ok && Array.isArray(data.sessions)) setSessions(data.sessions);
-    } catch (err) {
-      console.error("Errore caricamento sessioni:", err);
+      setErr(null);
+      const res = await fetch("/api/sessions/active", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setItems(Array.isArray(data.items) ? data.items : []);
+    } catch (e: any) {
+      setErr(e?.message || "Errore di caricamento");
     } finally {
       setLoading(false);
     }
   }
 
-  // Effettua polling ogni 5 secondi per aggiornare la lista
   useEffect(() => {
     load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+    // refresh periodico di sicurezza (30s)
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
   }, []);
 
-  function handleJoin(sessionId: string) {
-    // In futuro: router.push(`/session/${sessionId}`)
-    alert(`Entrando nella sessione: ${sessionId}`);
-  }
-
   return (
-    <Card title="Sessioni Attive">
-      {/* Stato di caricamento */}
-      {loading && <p className="text-white/70 text-sm">Caricamento…</p>}
+    <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold">Sessioni attive</h3>
+        <button
+          onClick={load}
+          className="px-2 py-1 text-sm rounded border border-zinc-600 hover:bg-zinc-800"
+        >
+          Aggiorna
+        </button>
+      </div>
 
-      {/* Nessuna sessione attiva */}
-      {!loading && sessions.length === 0 && (
-        <p className="text-white/70 text-sm">Nessuna sessione attiva al momento.</p>
+      {loading && <div className="text-sm text-zinc-400">Caricamento…</div>}
+      {err && <div className="text-sm text-red-400">{err}</div>}
+
+      {!loading && !err && items.length === 0 && (
+        <div className="text-sm text-zinc-400">Nessuna sessione attiva.</div>
       )}
 
-      {/* Lista sessioni */}
-      <ul className="space-y-3">
-        {sessions.map((s) => (
-          <li
-            key={s.id}
-            className="flex items-center justify-between bg-white/5 px-4 py-2 rounded-md border border-white/10 hover:bg-white/10 transition"
-          >
-            <div className="min-w-0">
-              <p className="font-medium truncate">{s.name}</p>
-              <p className="text-xs text-white/60 truncate">
-                {s.playersCount}/{s.maxPlayers} giocatori · codice:{" "}
-                <span className="font-mono">{s.code}</span>
-              </p>
-              {s.description && (
-                <p className="text-xs text-white/60 mt-1 line-clamp-2">
-                  {s.description}
-                </p>
-              )}
+      <ul className="space-y-2">
+        {items.map((s) => (
+          <li key={s.id} className="p-3 rounded border border-zinc-700 hover:bg-zinc-800">
+            <div className="flex items-center justify-between">
+              <div className="font-medium">{s.title}</div>
+              <span className="text-xs px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700">
+                {s.visibility}
+              </span>
             </div>
-
-            {/* Pulsante "Entra" */}
-            <Button
-              variant="secondary"
-              onClick={() => handleJoin(s.id)}
-              className="text-sm py-1.5"
-            >
-              🎲 Entra
-            </Button>
+            <div className="text-xs text-zinc-400 mt-1">
+              {s.date ? new Date(s.date).toLocaleString() : "Senza data"}
+            </div>
           </li>
         ))}
       </ul>
-    </Card>
+    </div>
   );
 }
