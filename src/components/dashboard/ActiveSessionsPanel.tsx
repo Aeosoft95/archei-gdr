@@ -55,8 +55,6 @@ export default function ActiveSessionsPanel() {
       const res = await fetch(`/api/sessions/${id}`, { method: "DELETE" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || `Errore ${res.status}`);
-      // opzionale: ricarica per sicurezza lato server
-      // await load();
     } catch (e: any) {
       // rollback in caso di errore
       setItems(prev);
@@ -112,9 +110,11 @@ export default function ActiveSessionsPanel() {
                   </span>
                 )}
               </div>
+
               {s.description ? (
                 <div className="text-sm text-zinc-400">{s.description}</div>
               ) : null}
+
               <div className="text-xs text-zinc-400">
                 Giocatori: {players}/{max} · Invito:{" "}
                 <span className="font-mono">{code}</span>
@@ -128,8 +128,8 @@ export default function ActiveSessionsPanel() {
 
               {s.isGM && (
                 <Button
-                  // se non hai "danger", puoi passare className con Tailwind (es. bg-red-600 hover:bg-red-700)
-                  variant="danger"
+                  variant="secondary"
+                  className="bg-red-600 hover:bg-red-700 text-white border-red-700"
                   disabled={deletingId === s.id}
                   onClick={() => handleDelete(s.id, s.title)}
                 >
