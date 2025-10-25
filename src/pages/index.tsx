@@ -67,15 +67,13 @@ export default function HomeLogin() {
         {/* Testo */}
         <div className="space-y-4">
           <h2 className="text-4xl md:text-5xl font-extrabold leading-tight drop-shadow">
-            Entra nella <span className="text-cyan-300">Cittadella Radiosa</span>
+            Entra nel <span className="text-cyan-300">Companion</span>
           </h2>
           <p className="text-white/80 max-w-xl">
-            Accedi per sincronizzare scene e giocatori in tempo reale.
+            Accedi per Creare la tua sessione di gioco
+			oppure Unisciti ad una esistente.
           </p>
           <ul className="text-white/75 text-sm space-y-1">
-            <li>• Realtime WebSocket (porta 8787)</li>
-            <li>• Cloudflare Tunnel online</li>
-            <li>• Login con NextAuth + Mongo</li>
           </ul>
         </div>
 
