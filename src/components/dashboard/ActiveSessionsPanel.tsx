@@ -20,23 +20,64 @@ type SessionItem = {
 export default function ActiveSessionsPanel() {
   const [items, setItems] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/sessions/mine", { cache: "no-store" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || "Errore caricamento");
+      setItems(j.sessions || []);
+    } catch (e: any) {
+      setError(e?.message || "Errore");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/sessions/mine", { cache: "no-store" });
-        const j = await res.json();
-        if (res.ok) setItems(j.sessions || []);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, []);
+
+  async function handleDelete(id: string, title: string) {
+    if (!confirm(`Eliminare la sessione "${title}"?`)) return;
+    setDeletingId(id);
+    setError("");
+
+    // update ottimistico
+    const prev = items;
+    setItems((curr) => curr.filter((s) => s.id !== id));
+
+    try {
+      const res = await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `Errore ${res.status}`);
+      // opzionale: ricarica per sicurezza lato server
+      // await load();
+    } catch (e: any) {
+      // rollback in caso di errore
+      setItems(prev);
+      setError(e?.message || "Eliminazione fallita");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   if (loading) {
     return (
       <div className="p-4 bg-zinc-800 border border-zinc-700 rounded-xl">
         Caricamento sessioni…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 bg-zinc-800 border border-zinc-700 rounded-xl text-red-400">
+        {error}
       </div>
     );
   }
@@ -84,6 +125,17 @@ export default function ActiveSessionsPanel() {
               <Link href={href}>
                 <Button variant="primary">Entra</Button>
               </Link>
+
+              {s.isGM && (
+                <Button
+                  // se non hai "danger", puoi passare className con Tailwind (es. bg-red-600 hover:bg-red-700)
+                  variant="danger"
+                  disabled={deletingId === s.id}
+                  onClick={() => handleDelete(s.id, s.title)}
+                >
+                  {deletingId === s.id ? "Elimino…" : "Elimina"}
+                </Button>
+              )}
             </div>
           </div>
         );
