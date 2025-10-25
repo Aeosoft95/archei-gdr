@@ -10,11 +10,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   await connectMongo();
 
-  // allinea i documenti che hanno inviteCode valorizzato ma code nullo/assente
   const r = await Session.updateMany(
-    { $or: [{ code: { $exists: false } }, { code: null }, { code: "" }], inviteCode: { $exists: true, $ne: "" } },
+    {
+      $or: [{ code: { $exists: false } }, { code: null }, { code: "" }],
+      inviteCode: { $exists: true, $ne: "" },
+    },
     [{ $set: { code: "$inviteCode" } }]
   );
 
-  res.status(200).json({ matched: r.matchedCount ?? r.n, modified: r.modifiedCount ?? r.nModified });
+  // Compatibilità tra driver recenti (matchedCount/modifiedCount) e vecchi (n/nModified)
+  const anyR = r as any;
+  const matched = typeof anyR.matchedCount === "number" ? anyR.matchedCount : (anyR.n ?? 0);
+  const modified = typeof anyR.modifiedCount === "number" ? anyR.modifiedCount : (anyR.nModified ?? 0);
+
+  return res.status(200).json({ matched, modified });
 }
