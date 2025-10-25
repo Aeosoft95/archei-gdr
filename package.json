@@ -11,6 +11,8 @@
     "token": "node -e \"console.log(require('jsonwebtoken').sign({id:'u1',name:'Andrea'}, process.env.JWT_SECRET||'changeme', {expiresIn:'1h'}))\"",
     "build": "next build",
     "start": "next start"
+	"build:ws": "tsc -p tsconfig.json",
+    "start:ws": "node dist/server/ws-server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
