@@ -1,8 +1,10 @@
+// src/pages/api/sessions/by-code/[code].ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]";
 import { connectMongo } from "../../../../lib/mongodb";
 import Session from "../../../../models/Session";
+import type { ISession } from "../../../../models/Session";
 import mongoose from "mongoose";
 
 export const config = { runtime: "nodejs" };
@@ -18,12 +20,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!code) return res.status(400).json({ error: "Missing code" });
 
   await connectMongo();
-  const doc = await Session.findOne({ inviteCode: code }).lean();
+
+  // Tipizziamo esplicitamente il risultato del lean()
+  const doc = await Session.findOne({ inviteCode: code })
+    .lean<ISession & { _id: mongoose.Types.ObjectId }>()
+    .exec();
 
   if (!doc) return res.status(404).json({ error: "Not found" });
 
   const ownerId = String(doc.ownerId);
   const isGM = ownerId === String(userId);
+
+  const participants =
+    (doc.participants || []).map((p: any) => String(p)) as string[];
 
   return res.status(200).json({
     id: String(doc._id),
@@ -35,7 +44,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     visibility: doc.visibility,
     inviteCode: doc.inviteCode,
     ownerId,
-    participants: (doc.participants || []).map((p: mongoose.Types.ObjectId) => String(p)),
+    participants,
+    path: `/table/${doc.inviteCode}`,
     me: { id: String(userId), isGM },
   });
 }
