@@ -1,6 +1,5 @@
-// src/pages/api/auth/register.ts
 import type { NextApiRequest, NextApiResponse } from "next";
-import bcrypt from "bcryptjs"; // <-- bcryptjs
+import bcrypt from "bcryptjs";
 import { connectMongo } from "../../../lib/mongodb";
 import User from "../../../models/User";
 
@@ -8,25 +7,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { email, password, name } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: "Missing email or password" });
+  if (!email || !password) return res.status(400).json({ error: "Missing fields" });
 
   try {
     await connectMongo();
 
-    const normalized = String(email).toLowerCase().trim();
-    const exists = await User.findOne({ email: normalized });
-    if (exists) return res.status(409).json({ error: "Email already registered" });
+    const exists = await User.findOne({ email: email.toLowerCase() });
+    if (exists) return res.status(409).json({ error: "User exists" });
 
-    const hash = await bcrypt.hash(password, 10); // <-- bcryptjs
-    const created = await User.create({
-      email: normalized,
-      password: hash,
-      name: name || "",
-    });
+    const hash = await bcrypt.hash(password, 10);
+    const u = await User.create({ email: email.toLowerCase(), password: hash, name: name || "" });
 
-    return res.status(201).json({ id: String(created._id), email: created.email, name: created.name });
-  } catch (err) {
-    console.error("register error:", err);
+    return res.status(200).json({ id: String(u._id), email: u.email });
+  } catch (e) {
+    console.error("register error:", e);
     return res.status(500).json({ error: "Internal error" });
   }
 }

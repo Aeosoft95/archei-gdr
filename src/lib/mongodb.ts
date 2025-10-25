@@ -1,8 +1,19 @@
+// src/lib/mongodb.ts
 import mongoose from "mongoose";
 
-export const connectMongo = async () => {
-  if (mongoose.connection.readyState >= 1) return mongoose.connection;
-  const url = process.env.DB_URL as string;
-  if (!url) throw new Error("DB_URL is not set");
-  return mongoose.connect(url);
+const MONGODB_URI = process.env.DATABASE_URL!;
+if (!MONGODB_URI) throw new Error("DATABASE_URL non impostato");
+
+let cached = (global as any).mongoose as {
+  conn: typeof mongoose | null;
+  promise: Promise<typeof mongoose> | null;
 };
+
+if (!cached) cached = (global as any).mongoose = { conn: null, promise: null };
+
+export async function connectMongo() {
+  if (cached.conn) return cached.conn;
+  if (!cached.promise) cached.promise = mongoose.connect(MONGODB_URI).then(m => m);
+  cached.conn = await cached.promise;
+  return cached.conn;
+}
