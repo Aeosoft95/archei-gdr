@@ -104,9 +104,13 @@ export default function ActiveSessionsPanel() {
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <div className="font-medium">{s.title}</div>
-                {s.isGM && (
+                {s.isGM ? (
                   <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 uppercase">
                     GM
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 uppercase">
+                    Player
                   </span>
                 )}
               </div>
