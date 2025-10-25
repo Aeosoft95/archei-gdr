@@ -1,8 +1,12 @@
-import NextAuth, { NextAuthOptions } from "next-auth";
+// src/pages/api/auth/[...nextauth].ts
+import NextAuth, { type NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs"; // <-- bcryptjs: 100% JS, compatibile con Vercel
 import { connectMongo } from "../../../lib/mongodb";
 import User from "../../../models/User";
+
+// (opzionale ma utile per evitare caching in auth endpoints)
+export const dynamic = "force-dynamic";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -17,10 +21,11 @@ export const authOptions: NextAuthOptions = {
 
         await connectMongo();
 
-        const email = credentials.email.toLowerCase();
-        const user = await User.findOne({ email });
+        const email = credentials.email.toLowerCase().trim();
+        const user = await User.findOne({ email }).select("+password");
         if (!user) return null;
 
+        // bcryptjs compare
         const ok = await bcrypt.compare(credentials.password, user.password);
         if (!ok) return null;
 
@@ -40,7 +45,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       // alla login inseriamo id e name nel token
       if (user) {
-        token.id = (user as any).id;
+        (token as any).id = (user as any).id;
         token.name = user.name || token.name;
       }
       return token;
@@ -49,17 +54,13 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       // arricchiamo la sessione con id e avatar dal DB
       if (session.user) {
-        (session.user as any).id = token.id;
+        (session.user as any).id = (token as any).id;
 
         try {
           await connectMongo();
-          const dbUser = await User.findById(token.id).select("avatarUrl name");
+          const dbUser = await User.findById((token as any).id).select("avatarUrl name");
           if (dbUser) {
-            // aggiorna name se presente in DB
-            if (dbUser.name && !session.user.name) {
-              session.user.name = dbUser.name;
-            }
-            // imposta avatar nella sessione
+            if (dbUser.name && !session.user.name) session.user.name = dbUser.name;
             session.user.image = dbUser.avatarUrl || undefined;
           }
         } catch {
