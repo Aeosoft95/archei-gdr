@@ -1,4 +1,3 @@
-// server/db/mongo.ts
 import mongoose from "mongoose";
 
 /**
@@ -12,9 +11,8 @@ export async function connectMongo() {
   if (!MONGODB_URI) throw new Error("DATABASE_URL non impostato");
 
   try {
-    conn = await mongoose.connect(MONGODB_URI, {
-      dbName: process.env.MONGO_DBNAME || undefined,
-    });
+    // ⚠️ Il DB viene già specificato dentro l'URI di Atlas.
+    conn = await mongoose.connect(MONGODB_URI);
     console.log("✅ WS connesso a MongoDB");
     return conn;
   } catch (err) {
