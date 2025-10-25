@@ -13,7 +13,12 @@ if (!cached) cached = (global as any).mongoose = { conn: null, promise: null };
 
 export async function connectMongo() {
   if (cached.conn) return cached.conn;
-  if (!cached.promise) cached.promise = mongoose.connect(MONGODB_URI).then(m => m);
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(MONGODB_URI, {
+      // Evita attese infinite se Atlas non è raggiungibile
+      serverSelectionTimeoutMS: 5000,
+    }).then(m => m);
+  }
   cached.conn = await cached.promise;
   return cached.conn;
 }
