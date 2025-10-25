@@ -1,106 +1,92 @@
+// src/components/dashboard/ActiveSessionsPanel.tsx
 "use client";
-import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 
-type Item = {
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { Card } from "../ui/card";
+import { Button } from "../ui/button";
+
+type SessionItem = {
   id: string;
   title: string;
-  description: string;
-  visibility: "public" | "private";
+  description?: string;
+  inviteCode?: string;
+  code?: string; // compat vecchio indice
   ownerId: string;
-  inviteCode: string;
-  playersNow: number;
-  playersMax: number;
-  date: string | null;
-  createdAt: string;
+  participants?: string[];
+  maxPlayers?: number;
 };
 
 export default function ActiveSessionsPanel() {
-  const { data: sess } = useSession();
-  const me = (sess?.user as any)?.id || null;
-
-  const [items, setItems] = useState<Item[]>([]);
+  const [items, setItems] = useState<SessionItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function load() {
-    try {
-      setLoading(true);
-      setErr(null);
-      const res = await fetch("/api/sessions/active", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setItems(Array.isArray(data.items) ? data.items : []);
-    } catch (e: any) {
-      setErr(e?.message || "Errore di caricamento");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 20000); // refresh ogni 20s
-    return () => clearInterval(t);
+    (async () => {
+      try {
+        const res = await fetch("/api/sessions/mine", { cache: "no-store" });
+        const j = await res.json();
+        if (res.ok) setItems(j.sessions || []);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
+  if (loading) {
+    return (
+      <Card className="p-4 bg-zinc-800 border border-zinc-700">
+        Caricamento sessioni…
+      </Card>
+    );
+  }
+
+  if (!items.length) {
+    return (
+      <Card className="p-4 bg-zinc-800 border border-zinc-700">
+        <div className="text-sm text-zinc-300">Nessuna sessione attiva.</div>
+      </Card>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Sessioni attive</h3>
-        <button
-          onClick={load}
-          className="px-2 py-1 text-sm rounded border border-zinc-600 hover:bg-zinc-800"
-        >
-          Aggiorna
-        </button>
-      </div>
+    <div className="space-y-3">
+      {items.map((s) => {
+        const code = (s.inviteCode || s.code || "").toUpperCase();
+        const href = `/table/${code}`;
+        const players = s.participants?.length ?? 1;
+        const max = s.maxPlayers ?? 5;
 
-      {loading && <div className="text-sm text-zinc-400">Caricamento…</div>}
-      {err && <div className="text-sm text-red-400">{err}</div>}
-      {!loading && !err && items.length === 0 && (
-        <div className="text-sm text-zinc-400">Nessuna sessione attiva.</div>
-      )}
-
-      <ul className="space-y-3">
-        {items.map((s) => {
-          const isGM = me && s.ownerId === me;
-          return (
-            <li key={s.id} className="p-3 rounded border border-zinc-700 hover:bg-zinc-800">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <div className="font-medium">{s.title}</div>
-                  {isGM && (
-                    <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-amber-300 text-black">
-                      GM
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => window.location.assign(`/sessions/${s.id}`)}
-                  className="px-3 py-1 text-sm rounded bg-white text-black"
-                >
-                  Entra
-                </button>
+        return (
+          <Card
+            key={s.id}
+            className="p-4 bg-zinc-800 border border-zinc-700 flex items-start justify-between gap-4"
+          >
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <div className="font-medium">{s.title}</div>
+                {/* se sei GM metti un badge (il backend può anche arricchire la risposta,
+                    qui teniamo semplice: il GM è l'owner) */}
+                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                  GM
+                </span>
               </div>
-
-              <div className="text-xs text-zinc-400 mt-1">
-                Player {s.playersNow}/{s.playersMax} • {s.visibility}
+              {s.description ? (
+                <div className="text-sm text-zinc-400">{s.description}</div>
+              ) : null}
+              <div className="text-xs text-zinc-400">
+                Giocatori: {players}/{max} · Invito: <span className="font-mono">{code}</span>
               </div>
+            </div>
 
-              {s.description && (
-                <div className="text-sm text-zinc-200 mt-2 line-clamp-2">
-                  {s.description}
-                </div>
-              )}
-
-              <div className="text-xs text-zinc-400 mt-2">
-                Codice invito: <span className="font-mono">{s.inviteCode}</span>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+            <div className="shrink-0 flex items-center gap-2">
+              <Link href={href}>
+                <Button variant="primary">Entra</Button>
+              </Link>
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 }
