@@ -1,6 +1,6 @@
 "use client";
 import { useSession, signOut } from "next-auth/react";
-import { Button } from "../ui/Button";
+import { Button } from "../ui/button";
 import { useRouter } from "next/navigation";
 import { FaCog, FaSignOutAlt, FaArrowLeft } from "react-icons/fa";
 
