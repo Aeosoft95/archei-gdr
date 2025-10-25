@@ -29,6 +29,7 @@ function extractPayload(req: NextApiRequest) {
       ? b.sessionTitle
       : "";
   const title = rawTitle.trim();
+
   const description = typeof b.description === "string" ? b.description : "";
   const date = b.date ? new Date(b.date) : undefined;
 
@@ -48,22 +49,33 @@ function extractPayload(req: NextApiRequest) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const where = "POST /api/sessions/create";
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const session = await getServerSession(req, res, authOptions);
-  const userId = (session?.user as any)?.id;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-  const { title, description, date, maxPlayers, tags, visibility } = extractPayload(req);
-  if (!title) {
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(400).json({ error: "Titolo obbligatorio" });
-  }
-
   try {
+    const session = await getServerSession(req, res, authOptions);
+    const userId = (session?.user as any)?.id;
+
+    if (!userId) {
+      console.error(`[${where}] 401 – no user in session`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const payload = extractPayload(req);
+    if (!payload.title) {
+      console.warn(`[${where}] 400 – missing title`, { bodyKeys: Object.keys(req.body ?? {}) });
+      return res.status(400).json({ error: "Titolo obbligatorio" });
+    }
+
     await connectMongo();
 
-    // Pre-genera un codice, verifica collisione, poi prova a creare con retry su 11000
+    // pre-check: userId deve essere un ObjectId valido
+    if (!mongoose.isValidObjectId(userId)) {
+      console.error(`[${where}] 400 – invalid userId ObjectId`, { userId });
+      return res.status(400).json({ error: "Invalid user id" });
+    }
+
+    // genera un inviteCode (con pre-check collisioni)
     let inviteCode = genInviteCode();
     for (let i = 0; i < 4; i++) {
       const exists = await Session.exists({ inviteCode });
@@ -71,24 +83,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       inviteCode = genInviteCode();
     }
 
+    // tenta la creazione con retry su eventuale duplicato dell’unico
     let created: any = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         created = await Session.create({
-          title,
-          description,
-          date,
-          maxPlayers,
-          tags,
-          visibility,
+          title: payload.title,
+          description: payload.description,
+          date: payload.date,
+          maxPlayers: payload.maxPlayers,
+          tags: payload.tags,
+          visibility: payload.visibility,
           ownerId: new mongoose.Types.ObjectId(userId),
           inviteCode,
           participants: [new mongoose.Types.ObjectId(userId)],
         });
-        break; // ok
+        break;
       } catch (e: any) {
+        // duplicate inviteCode
         if (e?.code === 11000 && e?.keyPattern?.inviteCode) {
-          // collisione unica: rigenera e riprova
+          console.warn(`[${where}] duplicate inviteCode, retry`, { inviteCode });
           inviteCode = genInviteCode();
           continue;
         }
@@ -96,13 +110,31 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    if (!created) throw new Error("Impossibile creare la sessione");
+    if (!created) {
+      console.error(`[${where}] 500 – create returned null`);
+      return res.status(500).json({ error: "Internal error" });
+    }
 
     res.setHeader("Cache-Control", "no-store");
     return res.status(201).json({ id: String(created._id), inviteCode: created.inviteCode });
   } catch (err: any) {
-    console.error("create session error:", err?.name, err?.message);
+    // LOG DETTAGLIATO
+    const info = {
+      name: err?.name,
+      code: err?.code,
+      message: err?.message,
+      keyPattern: err?.keyPattern,
+      errors: err?.errors ? Object.keys(err.errors) : undefined,
+    };
+    console.error("[create session error]", info);
+
     res.setHeader("Cache-Control", "no-store");
+
+    // restituiamo dettaglio SOLO fuori da production per debug
+    const isProd = process.env.NODE_ENV === "production";
+    if (!isProd) {
+      return res.status(500).json({ error: "Internal error", details: info });
+    }
     return res.status(500).json({ error: "Internal error" });
   }
 }
