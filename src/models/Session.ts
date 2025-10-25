@@ -1,28 +1,34 @@
-import mongoose, { Schema, model, models } from "mongoose";
+import { Schema, model, models, Types } from "mongoose";
 
-export interface ISession extends mongoose.Document {
-  name: string;
+export interface ISession {
+  _id: Types.ObjectId;
+  title: string;
   description?: string;
-  maxPlayers: number;
-  code: string;         // codice invito univoco
-  ownerId: string;      // id del creatore
-  playersCount: number; // giocatori attuali (creatore incluso)
-  isActive: boolean;
+  date?: Date;
+  maxPlayers?: number;
+  tags?: string[];
+  visibility: "public" | "private";
+  ownerId: Types.ObjectId;
+  inviteCode: string;
+  participants: Types.ObjectId[]; // per il count rapido
   createdAt: Date;
   updatedAt: Date;
 }
 
 const SessionSchema = new Schema<ISession>(
   {
-    name: { type: String, required: true, trim: true },
-    description: { type: String },
-    maxPlayers: { type: Number, required: true, min: 1, max: 99 },
-    code: { type: String, required: true, unique: true, index: true },
-    ownerId: { type: String, required: true, index: true },
-    playersCount: { type: Number, default: 1 },
-    isActive: { type: Boolean, default: true }
+    title: { type: String, required: true, trim: true },
+    description: { type: String, default: "" },
+    date: { type: Date },
+    maxPlayers: { type: Number, default: 5, min: 1, max: 50 },
+    tags: [{ type: String }],
+    visibility: { type: String, enum: ["public", "private"], default: "private" },
+    ownerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    inviteCode: { type: String, required: true, unique: true, index: true },
+    participants: [{ type: Schema.Types.ObjectId, ref: "User", default: [] }],
   },
   { timestamps: true }
 );
 
-export default models.Session || model<ISession>("Session", SessionSchema);
+const Session = models.Session || model<ISession>("Session", SessionSchema);
+export default Session;
