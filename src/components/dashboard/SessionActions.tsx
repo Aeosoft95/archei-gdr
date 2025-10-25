@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "../ui/Button";   // <-- percorso corretto (cartella ui è a ../ui)
+import { Button } from "../ui/button";   // <-- percorso corretto (cartella ui è a ../ui)
 import { useRouter } from "next/navigation";
 
 export function SessionActions() {
