@@ -1,17 +1,74 @@
+// src/components/dashboard/SessionActions.tsx
 "use client";
-import { Button } from "../ui/button";   // <-- percorso corretto (cartella ui è a ../ui)
-import { useRouter } from "next/navigation";
 
-export function SessionActions() {
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "../ui/button";
+
+type Props = {
+  onCreated?: (path: string) => void;
+};
+
+export function SessionActions({ onCreated }: Props) {
   const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleCreate() {
+    if (!title.trim()) {
+      setError("Inserisci un titolo per la sessione");
+      return;
+    }
+    setCreating(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/sessions/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Errore creazione");
+
+      const path = data.path || `/table/${data.inviteCode}`;
+      onCreated?.(path);
+      router.push(path);
+    } catch (err: any) {
+      console.error("Create session failed:", err);
+      setError(err.message || "Errore sconosciuto");
+    } finally {
+      setCreating(false);
+      setTitle("");
+    }
+  }
+
   return (
-    <div className="flex gap-4 mb-6">
-      <Button variant="primary" onClick={() => router.push("/sessions/create")}>
-        ➕ Crea Sessione
-      </Button>
-      <Button variant="secondary" onClick={() => router.push("/sessions/join")}>
-        🔗 Unisciti a Sessione
-      </Button>
+    <div className="flex flex-col gap-3 mb-6">
+      <div className="flex gap-4">
+        <input
+          className="bg-zinc-800 text-white px-3 py-2 rounded-md border border-zinc-700 w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Titolo sessione..."
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={creating}
+        />
+
+        <Button variant="primary" onClick={handleCreate} disabled={creating}>
+          ➕ {creating ? "Creazione..." : "Crea Sessione"}
+        </Button>
+
+        <Button
+          variant="secondary"
+          onClick={() => router.push("/sessions/join")}
+        >
+          🔗 Unisciti
+        </Button>
+      </div>
+
+      {error && <p className="text-red-400 text-sm mt-1">{error}</p>}
     </div>
   );
 }

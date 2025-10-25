@@ -1,3 +1,4 @@
+// src/models/Session.ts
 import { Schema, model, models, Types } from "mongoose";
 
 export interface ISession {
@@ -9,13 +10,15 @@ export interface ISession {
   tags?: string[];
   visibility: "public" | "private";
   ownerId: Types.ObjectId;
-  /** vecchio campo indicizzato in DB */
+  /** vecchio campo indicizzato in DB (presente con indice unico su Atlas) */
   code?: string;
   /** nostro codice invito principale */
   inviteCode: string;
   participants: Types.ObjectId[]; // per il count rapido
   createdAt: Date;
   updatedAt: Date;
+  /** virtual */
+  path?: string;
 }
 
 const SessionSchema = new Schema<ISession>(
@@ -36,8 +39,17 @@ const SessionSchema = new Schema<ISession>(
 
     participants: [{ type: Schema.Types.ObjectId, ref: "User", default: [] }],
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
+
+// Virtual: URL della stanza di gioco
+SessionSchema.virtual("path").get(function (this: ISession) {
+  return `/table/${this.inviteCode}`;
+});
 
 const Session = models.Session || model<ISession>("Session", SessionSchema);
 export default Session;

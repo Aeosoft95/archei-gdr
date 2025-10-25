@@ -49,32 +49,20 @@ function extractPayload(req: NextApiRequest) {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const WHERE = "POST /api/sessions/create";
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
     const s = await getServerSession(req, res, authOptions);
     const userId = (s?.user as any)?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized", details: { step: "session", msg: "no user in session" } });
-    }
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
     if (!mongoose.isValidObjectId(userId)) {
-      return res.status(400).json({ error: "Invalid user id", details: { step: "validate", userId } });
+      return res.status(400).json({ error: "Invalid user id" });
     }
 
     const { title, description, date, maxPlayers, tags, visibility } = extractPayload(req);
-    if (!title) {
-      return res
-        .status(400)
-        .json({ error: "Titolo obbligatorio", details: { step: "payload", bodyKeys: Object.keys(req.body ?? {}) } });
-    }
+    if (!title) return res.status(400).json({ error: "Titolo obbligatorio" });
 
-    try {
-      await connectMongo();
-    } catch (e: any) {
-      console.error(`[${WHERE}] connect error`, e?.name, e?.message);
-      return res.status(500).json({ error: "DB connect error", details: { name: e?.name, message: e?.message } });
-    }
+    await connectMongo();
 
     // pre-genera codice con check collisione
     let inviteCode = genInviteCode();
@@ -84,7 +72,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       inviteCode = genInviteCode();
     }
 
-    // tenta la create con retry su 11000
+    // create con retry se collisione su inviteCode/code
     let created: any = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
@@ -96,19 +84,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           tags,
           visibility,
           ownerId: new mongoose.Types.ObjectId(userId),
-          // FIX per indice unico esistente "code_1"
+          // compat con indice unico già presente in Atlas
           code: inviteCode,
           inviteCode,
           participants: [new mongoose.Types.ObjectId(userId)],
         });
         break;
       } catch (e: any) {
+        // collisione unique su inviteCode o su code
         if (e?.code === 11000 && (e?.keyPattern?.inviteCode || e?.keyPattern?.code)) {
-          // collisione unique su inviteCode o code → rigenera e riprova
           inviteCode = genInviteCode();
           continue;
         }
-        console.error(`[${WHERE}] create error`, e?.name, e?.message);
+        // altro errore
         return res.status(500).json({
           error: "Create failed",
           details: {
@@ -116,29 +104,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             code: e?.code,
             message: e?.message,
             keyPattern: e?.keyPattern,
-            errors: e?.errors ? Object.keys(e.errors) : undefined,
           },
         });
       }
     }
 
     if (!created) {
-      return res.status(500).json({ error: "Create returned null", details: { step: "post-create" } });
+      return res.status(500).json({ error: "Create returned null" });
     }
 
     res.setHeader("Cache-Control", "no-store");
-    return res.status(201).json({ id: String(created._id), inviteCode: created.inviteCode });
+    return res.status(201).json({
+      id: String(created._id),
+      inviteCode: created.inviteCode,
+      path: `/table/${created.inviteCode}`, // 👈 URL stanza per redirect immediato
+    });
   } catch (err: any) {
-    console.error("[create session fatal]", err?.name, err?.message);
-    res.setHeader("Cache-Control", "no-store");
     return res.status(500).json({
       error: "Internal error",
       details: {
         name: err?.name,
         code: err?.code,
         message: err?.message,
-        keyPattern: err?.keyPattern,
-        errors: err?.errors ? Object.keys(err.errors) : undefined,
       },
     });
   }
