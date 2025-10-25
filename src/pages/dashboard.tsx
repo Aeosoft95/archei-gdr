@@ -2,7 +2,7 @@
 import { useSession, signIn } from "next-auth/react";
 import { useEffect } from "react";
 import { SessionActions } from "../components/dashboard/SessionActions";
-import { ActiveSessionsPanel } from "../components/dashboard/ActiveSessionsPanel";
+import ActiveSessionsPanel from "../components/dashboard/ActiveSessionsPanel";
 
 export default function Dashboard() {
   const { status } = useSession();
