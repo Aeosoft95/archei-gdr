@@ -6,10 +6,10 @@ import ChatPanel from "./ChatPanel";
 import { useChatBus } from "@/lib/chat/bus";
 
 /**
- * MiniChat trascinabile + apertura auto (sopra/sotto) in base allo spazio
- * - posizione (x,y) salvata per-stanza
- * - badge non letti quando chiusa
- * - apertura sopra se sotto non c'è spazio sufficiente; altrimenti sotto
+ * MiniChat trascinabile con apertura auto:
+ * - Posizione (x,y) salvata per-stanza
+ * - Badge non letti quando chiusa
+ * - Apertura sopra/sotto e destra/sinistra in base allo spazio
  */
 export default function MiniChat({ roomCode }: { roomCode: string }) {
   const { messages, wsReady } = useChatBus();
@@ -18,21 +18,21 @@ export default function MiniChat({ roomCode }: { roomCode: string }) {
   const storageOpen = useMemo(() => `minichat-open:${roomCode}`, [roomCode]);
   const storageUnread = useMemo(() => `minichat-unread:${roomCode}`, [roomCode]);
 
-  // posizione assoluta del bottone (fisso alla top-left del bottone)
+  // posizione assoluta del bottone (top-left del bottone)
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
 
   // refs per misura
-  const btnRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // inizializza posizione di default (in basso a destra con margini)
+  // posizione di default: in basso a destra con margini
   useEffect(() => {
-    const M = 16; // margin
+    const M = 16;
     const vw = window.innerWidth, vh = window.innerHeight;
-    let defX = vw - 280; // vicino al bordo destro
-    let defY = vh - 80;  // vicino al bordo inferiore
+    let defX = vw - 280;
+    let defY = vh - 80;
     try {
       const saved = localStorage.getItem(storagePos);
       if (saved) {
@@ -78,15 +78,10 @@ export default function MiniChat({ roomCode }: { roomCode: string }) {
   }, [messages.length, open, unread, storageUnread]);
 
   // drag
-  const draggingRef = useRef<{ dx: number; dy: number; startX: number; startY: number } | null>(null);
+  const draggingRef = useRef<{ dx: number; dy: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    draggingRef.current = {
-      dx: e.clientX - rect.left,
-      dy: e.clientY - rect.top,
-      startX: rect.left,
-      startY: rect.top,
-    };
+    draggingRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: React.PointerEvent) => {
@@ -114,8 +109,8 @@ export default function MiniChat({ roomCode }: { roomCode: string }) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // calcola apertura auto: sopra o sotto?
-  const placement = useAutoPlacement(pos, btnRef, panelRef);
+  // apertura auto: sopra/sotto e destra/sinistra
+  const { vertical, horizontal } = useAutoPlacement(pos, btnRef, panelRef);
 
   return (
     <div
@@ -134,6 +129,7 @@ export default function MiniChat({ roomCode }: { roomCode: string }) {
         aria-label={open ? "Chiudi chat" : "Apri chat"}
       >
         {open ? "Chiudi chat" : "Apri chat"}
+        {/* badge non letti */}
         {!open && unread > 0 && (
           <span className="absolute -top-1 -right-1 text-[10px] px-1.5 py-0.5 rounded-full bg-red-600 text-white">
             {unread}
@@ -150,11 +146,14 @@ export default function MiniChat({ roomCode }: { roomCode: string }) {
         className={`absolute w-96 h-80 bg-zinc-900/90 border border-zinc-700 rounded-xl p-3 shadow-xl transition-all
           ${open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}
         `}
-        style={
-          placement === "above"
-            ? { bottom: (btnRef.current?.offsetHeight || 40) + 8, left: 0 }
-            : { top: (btnRef.current?.offsetHeight || 40) + 8, left: 0 }
-        }
+        style={{
+          ...(vertical === "above"
+            ? { bottom: (btnRef.current?.offsetHeight || 40) + 8 }
+            : { top: (btnRef.current?.offsetHeight || 40) + 8 }),
+          ...(horizontal === "right"
+            ? { left: 0 }
+            : { right: 0 }),
+        }}
       >
         <ChatPanel />
       </div>
@@ -175,48 +174,17 @@ function clampToViewport(p: { x: number; y: number }, M: number): { x: number; y
   return { x, y };
 }
 
-/** Decide se aprire la chat sopra o sotto al bottone in base allo spazio disponibile */
+/** Decide sopra/sotto e destra/sinistra secondo lo spazio */
 function useAutoPlacement(
   pos: { x: number; y: number },
-  btnRef: React.RefObject<HTMLButtonElement>,
-  panelRef: React.RefObject<HTMLDivElement>
-): "above" | "below" {
-  const [place, setPlace] = useState<"above" | "below">("below");
+  btnRef: React.RefObject<HTMLButtonElement | null>,
+  panelRef: React.RefObject<HTMLDivElement | null>
+): { vertical: "above" | "below"; horizontal: "left" | "right" } {
+  const [state, setState] = useState<{ vertical: "above" | "below"; horizontal: "left" | "right" }>({
+    vertical: "below",
+    horizontal: "right",
+  });
 
   useEffect(() => {
-    const vh = window.innerHeight;
-    const btnH = btnRef.current?.offsetHeight ?? 40;
-    const panelH = panelRef.current?.offsetHeight ?? 320;
-    const margin = 12;
-
-    const spaceBelow = vh - (pos.y + btnH);
-    const spaceAbove = pos.y;
-
-    // Se sotto non c'è abbastanza spazio per il pannello → apri sopra, altrimenti sotto
-    if (spaceBelow < panelH + margin && spaceAbove >= panelH + margin) {
-      setPlace("above");
-    } else {
-      setPlace("below");
-    }
-  }, [pos.x, pos.y, btnRef.current?.offsetHeight, panelRef.current?.offsetHeight]);
-
-  useEffect(() => {
-    const onResize = () => {
-      const vh = window.innerHeight;
-      const btnH = btnRef.current?.offsetHeight ?? 40;
-      const panelH = panelRef.current?.offsetHeight ?? 320;
-      const margin = 12;
-      const spaceBelow = vh - (pos.y + btnH);
-      const spaceAbove = pos.y;
-      if (spaceBelow < panelH + margin && spaceAbove >= panelH + margin) {
-        setPlace("above");
-      } else {
-        setPlace("below");
-      }
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [pos.y]);
-
-  return place;
-}
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const btnW = btnRef.current?.offsetWidth

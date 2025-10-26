@@ -1,9 +1,10 @@
+// src/components/tools/DiceRoller.tsx
 "use client";
 
 import { useState } from "react";
 import { Button } from "../ui/button";
 import { useChatBus } from "@/lib/chat/bus";
-import { rollD6Expression, PartResult } from "@/lib/dice/roller-d6"; // usa solo D6
+import { rollD6Expression, PartResult } from "@/lib/dice/roller-d6";
 
 export default function DiceRoller() {
   const { emit } = useChatBus();
@@ -11,61 +12,48 @@ export default function DiceRoller() {
   const [note, setNote] = useState("");
   const [last, setLast] = useState<string>("");
 
-  async function handleRoll() {
+  async function roll() {
     try {
-      const { total, parts, text } = rollD6Expression(formula);
-      setLast(text);
-
-      // INVIO PIATTO (nessun payload annidato)
-      emit({
+      const r = rollD6Expression(formula);
+      const payload = {
         type: "dice",
-        expr: formula,
-        total,
-        detail: note || partsToDetail(parts),
-      });
+        formula,
+        note: note || undefined,
+        total: r.total,
+        parts: r.parts as PartResult[],
+        text: `${formula} [${r.parts.map(p => p.rolls.join(",")).join("; ")}] = ${r.total}`,
+        ts: Date.now(),
+      };
+      setLast(payload.text);
+      emit({ type: "dice", expr: formula, total: r.total, detail: payload.text });
     } catch (e: any) {
-      const msg = e?.message || "Formula non valida";
-      setLast(msg);
+      setLast(e?.message || "Formula non valida");
     }
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-2">
+    <div className="w-full min-w-0">
+      <div className="flex flex-wrap gap-2 items-center">
         <input
-          className="bg-zinc-800 text-white px-3 py-2 rounded-md border border-zinc-700 w-44"
+          className="flex-1 min-w-[140px] bg-zinc-800 text-white px-3 py-2 rounded-md border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={formula}
           onChange={(e) => setFormula(e.target.value)}
-          placeholder="es. 2d6+1"
+          placeholder="es. 3d6+2"
         />
         <input
-          className="flex-1 bg-zinc-800 text-white px-3 py-2 rounded-md border border-zinc-700"
+          className="flex-1 min-w-[160px] bg-zinc-800 text-white px-3 py-2 rounded-md border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="nota (facoltativa)"
+          placeholder="Nota (facoltativa)"
         />
-        <Button variant="primary" onClick={handleRoll}>
-          Tira
-        </Button>
+        <Button variant="primary" onClick={roll}>Tira</Button>
       </div>
 
-      {last && (
-        <div className="text-xs text-zinc-400">
-          Ultimo: <span className="font-mono">{last}</span>
+      {last ? (
+        <div className="mt-3 p-3 rounded-lg bg-zinc-800 border border-zinc-700 text-sm break-words">
+          {last}
         </div>
-      )}
+      ) : null}
     </div>
   );
-}
-
-function partsToDetail(parts: PartResult[]) {
-  // es. "[4,2]=6; +1"
-  return parts
-    .map((p) => {
-      if (p.type === "dice") return `[${p.rolls.join(",")}]${p.mod ? ` ${p.mod >= 0 ? "+" : ""}${p.mod}` : ""}=${p.sum}`;
-      if (p.type === "mod") return `${p.value >= 0 ? "+" : ""}${p.value}`;
-      return "";
-    })
-    .filter(Boolean)
-    .join("; ");
 }

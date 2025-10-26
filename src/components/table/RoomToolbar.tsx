@@ -23,34 +23,45 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
   const [width, setWidth] = useState<number | null>(null);
 
   const asideRef = useRef<HTMLDivElement | null>(null);
-  const draggingRef = useRef<boolean>(false);
+  const draggingRef = useRef(false);
 
   // ripristina stato
   useEffect(() => {
     try {
       const v = localStorage.getItem(storageKeyOpen);
       if (v === "1") setOpen(true);
+
       const t = localStorage.getItem(storageKeyTab) as TabKey | null;
       if (t) setTab(t);
+
       const w = localStorage.getItem(storageKeyWidth);
       if (w) setWidth(parseInt(w, 10));
     } catch {}
   }, [storageKeyOpen, storageKeyTab, storageKeyWidth]);
 
-  // persisti open/tab/width
+  // persisti open/tab
   useEffect(() => {
-    try { localStorage.setItem(storageKeyOpen, open ? "1" : "0"); } catch {}
+    try {
+      localStorage.setItem(storageKeyOpen, open ? "1" : "0");
+    } catch {}
   }, [open, storageKeyOpen]);
+
   useEffect(() => {
-    try { localStorage.setItem(storageKeyTab, tab); } catch {}
+    try {
+      localStorage.setItem(storageKeyTab, tab);
+    } catch {}
   }, [tab, storageKeyTab]);
+
+  // persisti width solo se definita
   useEffect(() => {
-    if (width) {
-      try { localStorage.setItem(storageKeyWidth, String(width)); } catch {}
+    if (width != null && Number.isFinite(width)) {
+      try {
+        localStorage.setItem(storageKeyWidth, String(width));
+      } catch {}
     }
   }, [width, storageKeyWidth]);
 
-  // larghezza responsive di base (se utente non l'ha impostata)
+  // larghezza responsive di base (se non impostata dall’utente)
   // clamp: min 280px, prefer 32vw, max 440px
   const cssWidth = width ? `${width}px` : "clamp(280px, 32vw, 440px)";
 
@@ -58,15 +69,18 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!draggingRef.current) return;
-      const aside = asideRef.current;
-      if (!aside) return;
       const screenW = window.innerWidth;
       const x = e.clientX;
-      // la maniglia è sul bordo sinistro della sidebar
+      // la maniglia è sul bordo sinistro della sidebar: calcolo width da destra
       const newW = Math.min(560, Math.max(260, screenW - x));
-      setWidth(newW);
+      setWidth((prev) => (prev !== newW ? newW : prev));
+      e.preventDefault();
     };
-    const onUp = () => { draggingRef.current = false; };
+    const onUp = () => {
+      draggingRef.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -95,12 +109,12 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
         }`}
         style={{ width: cssWidth, maxWidth: "92vw" }} // responsive + limite mobile
       >
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col min-w-0">
           {/* header */}
           <div className="px-4 py-3 border-b border-zinc-700 flex items-center justify-between">
-            <div>
+            <div className="min-w-0">
               <div className="text-sm text-zinc-400">Stanza</div>
-              <div className="font-semibold">
+              <div className="font-semibold truncate">
                 {roomCode}{" "}
                 {isGM && (
                   <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 uppercase align-middle">
@@ -125,7 +139,10 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
             <TabButton active={tab === "sheet"} onClick={() => setTab("sheet")}>
               📄 Scheda
             </TabButton>
-            <TabButton active={tab === "inventory"} onClick={() => setTab("inventory")}>
+            <TabButton
+              active={tab === "inventory"}
+              onClick={() => setTab("inventory")}
+            >
               🎒 Inventario
             </TabButton>
             <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
@@ -133,8 +150,8 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
             </TabButton>
           </div>
 
-          {/* content */}
-          <div className="flex-1 overflow-auto p-3">
+          {/* content: min-w-0 per evitare overflow e rendere i tool fluidi */}
+          <div className="flex-1 overflow-auto p-3 min-w-0">
             {tab === "chat" && <ChatPanel />}
             {tab === "dice" && <DiceRoller />}
 
@@ -164,8 +181,14 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
         {/* maniglia di resize (bordo sinistro) */}
         <div
           title="Trascina per cambiare larghezza"
-          className="absolute left-0 top-0 h-full w-1.5 cursor-col-resize"
-          onMouseDown={() => (draggingRef.current = true)}
+          className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
+          onMouseDown={(e) => {
+            draggingRef.current = true;
+            // feedback visivo durante il drag
+            document.body.style.userSelect = "none";
+            document.body.style.cursor = "col-resize";
+            e.preventDefault();
+          }}
         />
       </aside>
     </>
