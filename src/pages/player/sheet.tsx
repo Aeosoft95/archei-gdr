@@ -1,4 +1,4 @@
-// src/pages/sheet.tsx
+// src/pages/player/sheet.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -52,7 +52,6 @@ function normalizePC(inData:any): PCData {
     equipped: !!w?.equipped,
   })) : [];
 
-  // ✅ Niente tuple destructuring: mapping tipizzato esplicito
   const armors: Armor[] = Array.isArray(inData?.armors)
     ? inData.armors.map((a:any) => ({
         id: normStr(a?.id, uid()),
@@ -63,7 +62,6 @@ function normalizePC(inData:any): PCData {
       }))
     : [];
 
-  // ✅ Niente tuple destructuring anche qui
   const spells: LearnedSpell[] = Array.isArray(inData?.spells)
     ? inData.spells.map((s:any) => ({
         id: normStr(s?.id, uid()),
