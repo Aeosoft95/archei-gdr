@@ -1,4 +1,3 @@
-// src/lib/chat/bus.tsx
 "use client";
 
 import React, {
@@ -11,32 +10,19 @@ import React, {
   useState,
 } from "react";
 
-/** Messaggi visualizzabili in chat */
+/** Messaggi standardizzati che la chat sa visualizzare */
 export type ChatMessage =
   | { type: "system"; text: string; ts: number }
-  | {
-      type: "chat";
-      from?: { id?: string; name?: string };
-      text: string;
-      ts: number;
-      cid?: string;
-    }
-  | {
-      type: "dice";
-      from?: { id?: string; name?: string };
-      expr: string;
-      total: number;
-      detail?: string;
-      ts: number;
-      cid?: string;
-    }
-  | { type: string; [k: string]: any };
+  | { type: "chat"; from?: { id?: string; name?: string }; text: string; ts: number }
+  | { type: "dice"; from?: { id?: string; name?: string }; expr: string; total: number; detail?: string; ts: number }
+  | { type: string; [k: string]: any }; // estendibile
 
-/** Eventi pubblicati dai tool e inviati al WS */
+/** Eventi inviati dai tool → bus → WS */
 export type ChatEvent =
-  | { type: "chat"; text: string; cid?: string }
-  | { type: "dice"; expr: string; total: number; detail?: string; cid?: string }
-  | { type: "join" | "leave" | "gmAction" | string; [k: string]: any; cid?: string };
+  | { type: "chat"; text: string }
+  | { type: "dice"; expr: string; total: number; detail?: string }
+  | { type: "system"; text: string }
+  | { type: "join" | "leave" | "gmAction" | string; [k: string]: any };
 
 type ChatContextValue = {
   messages: ChatMessage[];
@@ -49,37 +35,25 @@ type ChatContextValue = {
 const ChatContext = createContext<ChatContextValue | null>(null);
 
 function getWsBase() {
-  return (process.env.NEXT_PUBLIC_WS_URL || "wss://ws.archei-gdr.org").replace(
-    /\/+$/,
-    ""
-  );
+  return (process.env.NEXT_PUBLIC_WS_URL || "wss://ws.archei-gdr.org").replace(/\/+$/, "");
 }
 
 async function getWsToken(): Promise<string | undefined> {
+  try { const t = localStorage.getItem("wsToken"); if (t) return t; } catch {}
+  if (typeof window !== "undefined" && (window as any).__WS_TOKEN__) return (window as any).__WS_TOKEN__;
   try {
-    const cached = localStorage.getItem("wsToken");
-    if (cached) return cached;
-  } catch {}
-  try {
-    const r = await fetch("/api/auth/ws-token", { cache: "no-store" });
+    const r = await fetch("/api/ws/token");
     if (r.ok) {
-      const j = await r.json().catch(() => ({}));
-      if (typeof j?.token === "string") {
-        try {
-          localStorage.setItem("wsToken", j.token);
-        } catch {}
-        return j.token;
-      }
+      const j = await r.json();
+      if (typeof j?.token === "string") return j.token;
     }
   } catch {}
   return undefined;
 }
 
-// semplice generatore client-id per deduplicare gli echo dal server
-function makeCid() {
-  return `${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
+// id client univoco per dedup
+function newCid() {
+  return Math.random().toString(36).slice(2) + "-" + Math.random().toString(36).slice(2);
 }
 
 export function ChatProvider({
@@ -91,117 +65,92 @@ export function ChatProvider({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [wsReady, setWsReady] = useState(false);
-  const [me, setMe] = useState<{ id?: string; name?: string } | undefined>(
-    undefined
-  );
-
+  const [me, setMe] = useState<{ id?: string; name?: string } | undefined>(undefined);
   const wsRef = useRef<WebSocket | null>(null);
-  const seenCidRef = useRef<Set<string>>(new Set()); // per dedup
 
-  // Connessione WS unica per stanza
+  // cids pendenti: eventi che abbiamo inviato e che rientreranno dal WS
+  const pending = useRef<Set<string>>(new Set());
+
+  // Connessione WS unica
   useEffect(() => {
     let closed = false;
-
     (async () => {
       const token = await getWsToken();
       const qs = new URLSearchParams({ code: roomCode });
       if (token) qs.set("token", token);
-
       const url = `${getWsBase()}/?${qs.toString()}`;
+
       try {
         const ws = new WebSocket(url);
         wsRef.current = ws;
 
-        ws.onopen = () => {
-          if (!closed) setWsReady(true);
-        };
+        ws.onopen = () => { if (!closed) setWsReady(true); };
 
         ws.onmessage = (ev) => {
           if (closed) return;
           let msg: any = null;
-          try {
-            msg = JSON.parse(ev.data);
-          } catch {
+          try { msg = JSON.parse(ev.data); } catch { return; }
+
+          // dedup: se rientra un nostro echo con cid noto → ignora
+          if (msg?.cid && pending.current.has(msg.cid)) {
+            pending.current.delete(msg.cid);
             return;
           }
 
-          // dedup sugli echo se presente cid
-          const cid: string | undefined = msg?.cid;
-          if (cid) {
-            if (seenCidRef.current.has(cid)) return;
-            seenCidRef.current.add(cid);
-          }
-
-          // Normalizzazione base
+          // Normalizzazioni
           if (msg?.type === "welcome") {
-            setMe(msg?.user);
-            setMessages((curr) => [
-              ...curr,
-              { type: "system", text: "Connesso alla stanza.", ts: Date.now() },
-            ]);
+            setMe(msg?.from || msg?.user);
+            setMessages((curr) => [...curr, { type: "system", text: "Connesso alla stanza.", ts: Date.now() }]);
             return;
           }
+
           if (msg?.type === "system" && msg.text) {
+            setMessages((curr) => [...curr, { type: "system", text: msg.text, ts: msg.ts || Date.now() }]);
+            return;
+          }
+
+          // Caso server che incapsula in payload
+          const payload = msg?.payload && typeof msg.payload === "object" ? msg.payload : msg;
+
+          if (payload?.type === "chat" && payload.text) {
             setMessages((curr) => [
               ...curr,
-              { type: "system", text: msg.text, ts: msg.ts || Date.now() },
+              { type: "chat", from: msg.from, text: payload.text, ts: payload.ts || msg.ts || Date.now() },
             ]);
             return;
           }
-          if (msg?.type === "chat" && msg.text) {
-            setMessages((curr) => [
-              ...curr,
-              {
-                type: "chat",
-                from: msg.from,
-                text: msg.text,
-                ts: msg.ts || Date.now(),
-                cid,
-              },
-            ]);
-            return;
-          }
-          if (msg?.type === "dice" && msg.expr) {
+
+          if (payload?.type === "dice" && payload.expr) {
             setMessages((curr) => [
               ...curr,
               {
                 type: "dice",
                 from: msg.from,
-                expr: msg.expr,
-                total: Number(msg.total),
-                detail: msg.detail,
-                ts: msg.ts || Date.now(),
-                cid,
+                expr: payload.expr || payload.formula, // compat
+                total: Number(payload.total),
+                detail: payload.detail || payload.text,
+                ts: payload.ts || msg.ts || Date.now(),
               },
             ]);
             return;
           }
 
-          // fallback generico
-          setMessages((curr) => [
-            ...curr,
-            { ...(msg || {}), ts: msg?.ts || Date.now(), cid },
-          ]);
+          // fallback: append raw
+          setMessages((curr) => [...curr, { ...(msg || {}), ts: msg?.ts || Date.now() }]);
         };
 
-        ws.onclose = () => {
-          setWsReady(false);
-          wsRef.current = null;
-        };
+        ws.onclose = () => { setWsReady(false); };
       } catch {
-        setWsReady(false);
+        // nessun realtime
       }
     })();
 
-    // cleanup alla disconnessione / cambio stanza
     return () => {
       closed = true;
-      try {
-        wsRef.current?.close();
-      } catch {}
+      try { wsRef.current?.close(); } catch {}
       wsRef.current = null;
       setWsReady(false);
-      // non svuoto i messaggi: resta il log della stanza
+      pending.current.clear();
     };
   }, [roomCode]);
 
@@ -209,83 +158,46 @@ export function ChatProvider({
   const sendChat = useCallback((text: string) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return false;
-
-    const cid = makeCid();
-    const evt: ChatEvent = { type: "chat", text, cid };
-    try {
-      ws.send(JSON.stringify(evt));
-    } catch {
-      return false;
-    }
-
-    // echo ottimistico (non duplica: il server restituirà lo stesso cid)
-    seenCidRef.current.add(cid);
-    setMessages((curr) => [
-      ...curr,
-      { type: "chat", from: me, text, ts: Date.now(), cid },
-    ]);
+    const cid = newCid();
+    pending.current.add(cid);
+    ws.send(JSON.stringify({ type: "chat", text, cid }));
+    // eco locale immediato
+    setMessages((curr) => [...curr, { type: "chat", from: me, text, ts: Date.now() }]);
     return true;
   }, [me]);
 
-  // API: eventi dai tool → WS + echo opzionale coerente
-  const emit = useCallback(
-    (evt: ChatEvent) => {
-      const ws = wsRef.current;
-      const cid = evt.cid || makeCid();
-      const out: ChatEvent = { ...evt, cid };
+  // API: eventi dai tool → WS + eco locale (solo per alcuni tipi)
+  const emit = useCallback((evt: ChatEvent) => {
+    const ws = wsRef.current;
+    const withCid = { ...evt, cid: newCid() };
 
-      if (ws && ws.readyState === ws.OPEN) {
-        try {
-          ws.send(JSON.stringify(out));
-        } catch {}
-      }
+    if (ws && ws.readyState === ws.OPEN) {
+      pending.current.add(withCid.cid as string);
+      ws.send(JSON.stringify(withCid));
+    }
 
-      // echo ottimistico locale per i tipi più comuni (dedup attivo)
-      if (out.type === "dice") {
-        seenCidRef.current.add(cid);
-        setMessages((curr) => [
-          ...curr,
-          {
-            type: "dice",
-            from: me,
-            expr: (out as any).expr,
-            total: (out as any).total,
-            detail: (out as any).detail,
-            ts: Date.now(),
-            cid,
-          },
-        ]);
-      } else if (out.type === "chat" && (out as any).text) {
-        seenCidRef.current.add(cid);
-        setMessages((curr) => [
-          ...curr,
-          {
-            type: "chat",
-            from: me,
-            text: (out as any).text,
-            ts: Date.now(),
-            cid,
-          },
-        ]);
-      } else if ((out as any).type === "system" && (out as any).text) {
-        seenCidRef.current.add(cid);
-        setMessages((curr) => [
-          ...curr,
-          { type: "system", text: (out as any).text, ts: Date.now(), cid },
-        ]);
-      }
-    },
-    [me]
-  );
+    // eco locale solo per chat/dice/system
+    if (evt.type === "dice") {
+      setMessages((curr) => [
+        ...curr,
+        {
+          type: "dice",
+          from: me,
+          expr: evt.expr,
+          total: evt.total,
+          detail: evt.detail,
+          ts: Date.now(),
+        },
+      ]);
+    } else if (evt.type === "chat" && evt.text) {
+      setMessages((curr) => [...curr, { type: "chat", from: me, text: evt.text, ts: Date.now() }]);
+    } else if (evt.type === "system" && (evt as any).text) {
+      setMessages((curr) => [...curr, { type: "system", text: (evt as any).text, ts: Date.now() }]);
+    }
+  }, [me]);
 
   const value = useMemo<ChatContextValue>(
-    () => ({
-      messages,
-      wsReady,
-      me,
-      sendChat,
-      emit,
-    }),
+    () => ({ messages, wsReady, me, sendChat, emit }),
     [messages, wsReady, me, sendChat, emit]
   );
 
