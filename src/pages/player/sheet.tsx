@@ -28,17 +28,63 @@ const EMPTY_PC:PCData = {
 };
 
 // ===== Helpers =====
+function normStr(v:any, def=""){ return typeof v === "string" ? v : (v==null ? def : String(v)); }
+function normNum(v:any, def=0){ const n = Number(v); return Number.isFinite(n) ? n : def; }
 function normalizePC(inData:any): PCData {
   const b = EMPTY_PC;
+
+  const abilities: Ability[] = Array.isArray(inData?.abilities) ? inData.abilities.map((a:any)=>({
+    id: normStr(a?.id, uid()),
+    name: normStr(a?.name),
+    rank: Math.max(0, Math.min(4, normNum(a?.rank, 0))) as 0|1|2|3|4,
+    desc: normStr(a?.desc),
+  })) : [];
+
+  const weapons: Weapon[] = Array.isArray(inData?.weapons) ? inData.weapons.map((w:any)=>({
+    id: normStr(w?.id, uid()),
+    name: normStr(w?.name),
+    notes: normStr(w?.notes),
+    damageSeg: normNum(w?.damageSeg, 1),
+    equipped: !!w?.equipped,
+  })) : [];
+
+  const armors: Armor[] = Array.isArray(inData?.armors) ? inData.armors.map((a:any)=>({
+    id: normStr(a?.id, uid()),
+    name: normStr(a?.name),
+    bonusD6: normNum(a?.bonusD6, 0),
+    notes: normStr(a?.notes),
+    equipped: !!a?.equipped,
+  })) : [];
+
+  const spells: LearnedSpell[] = Array.isArray(inData?.spells) ? inData.spells.map((s:any)=>({
+    id: normStr(s?.id, uid()),
+    refId: normStr(s?.refId),
+    notes: normStr(s?.notes),
+  })) : [];
+
   return {
-    ident:  { ...b.ident,  ...(inData?.ident  || {}) },
-    attrs:  { ...b.attrs,  ...(inData?.attrs  || {}) },
-    quick:  { ...b.quick,  ...(inData?.quick  || {}) },
-    abilities: Array.isArray(inData?.abilities) ? inData.abilities : [],
-    weapons:   Array.isArray(inData?.weapons)   ? inData.weapons   : [],
-    armors:    Array.isArray(inData?.armors)    ? inData.armors    : [],
-    spells:    Array.isArray(inData?.spells)    ? inData.spells    : [],
-    notes: typeof inData?.notes === "string" ? inData.notes : "",
+    ident:  {
+      name: normStr(inData?.ident?.name, b.ident.name),
+      race: normStr(inData?.ident?.race, b.ident.race),
+      clazz: normStr(inData?.ident?.clazz, b.ident.clazz),
+      level: normNum(inData?.ident?.level, b.ident.level) || 1,
+      portraitUrl: normStr(inData?.ident?.portraitUrl, ""),
+    },
+    attrs:  {
+      FOR: normNum(inData?.attrs?.FOR, 0),
+      DES: normNum(inData?.attrs?.DES, 0),
+      COS: normNum(inData?.attrs?.COS, 0),
+      INT: normNum(inData?.attrs?.INT, 0),
+      SAP: normNum(inData?.attrs?.SAP, 0),
+      CAR: normNum(inData?.attrs?.CAR, 0),
+    },
+    quick:  {
+      hp: normNum(inData?.quick?.hp, b.quick.hp),
+      foc: normNum(inData?.quick?.foc, b.quick.foc),
+      difMod: normNum(inData?.quick?.difMod, 0),
+    },
+    abilities, weapons, armors, spells,
+    notes: normStr(inData?.notes, ""),
   };
 }
 function derivedHP(level:number, COS:number){ return Math.max(1, 8 + COS + Math.max(0,level-1)*2); }
@@ -78,9 +124,8 @@ export default function SheetPage(){
 
         if (incoming) {
           setData(incoming);
-          writeLocal(incoming); // aggiorna cache locale allineata al server
+          writeLocal(incoming); // sync cache locale
         } else {
-          // fallback locale se il server non ha (ancora) persistenza
           const local = readLocal();
           setData(local ?? EMPTY_PC);
         }
@@ -97,7 +142,7 @@ export default function SheetPage(){
 
   // Auto-backup locale (debounced 500ms) ad ogni modifica
   useEffect(() => {
-    if (loading) return; // evita il primo paint
+    if (loading) return;
     if (debTimer.current) clearTimeout(debTimer.current);
     debTimer.current = setTimeout(() => writeLocal(data), 500);
     return () => { if (debTimer.current) clearTimeout(debTimer.current); };
@@ -155,25 +200,29 @@ export default function SheetPage(){
           foc: clamp(data.quick?.foc ?? 0, 0, 99),
           difMod: clamp(data.quick?.difMod ?? 0, -20, 50),
         },
+        abilities: (data.abilities||[]).map(a=>({ ...a, id:a.id||uid(), rank: Math.max(0, Math.min(4, a.rank)) as 0|1|2|3|4 })),
+        weapons: (data.weapons||[]).map(w=>({ ...w, id:w.id||uid(), damageSeg: w.damageSeg ?? 1 })),
+        armors: (data.armors||[]).map(a=>({ ...a, id:a.id||uid(), bonusD6: a.bonusD6 ?? 0 })),
+        spells: (data.spells||[]).map(s=>({ ...s, id:s.id||uid() })),
       });
 
-      // Aggiorna subito backup locale (per sicurezza)
+      // backup locale immediato
       writeLocal(payload);
 
       const r = await fetch("/api/player/sheet", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type":"application/json" },
-        body: JSON.stringify({ data: payload }), // se il tuo endpoint vuole data “raw”, sostituisci con: JSON.stringify(payload)
+        body: JSON.stringify({ data: payload }),
       });
 
       let ok = r.ok;
       let msg = "";
       try {
         const jr = await r.json();
-        ok = ok && (jr?.ok !== false); // accettiamo sia true/undefined che assenza
+        ok = ok && (jr?.ok !== false);
         if (jr?.message) msg = String(jr.message);
-      } catch { /* ignore */ }
+      } catch { /* body non json, pazienza */ }
 
       setStatus(ok ? "Salvato ✅" : (msg || "Salvato in locale (server non ha confermato)"));
     } catch {
