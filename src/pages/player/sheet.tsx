@@ -27,8 +27,24 @@ const EMPTY_PC:PCData = {
   abilities:[], weapons:[], armors:[], spells:[], notes:""
 };
 
+// ---------- Helpers ----------
+function normalizePC(inData:any): PCData {
+  const b = EMPTY_PC;
+  return {
+    ident:  { ...b.ident,  ...(inData?.ident  || {}) },
+    attrs:  { ...b.attrs,  ...(inData?.attrs  || {}) },
+    quick:  { ...b.quick,  ...(inData?.quick  || {}) },
+    abilities: Array.isArray(inData?.abilities) ? inData.abilities : [],
+    weapons:   Array.isArray(inData?.weapons)   ? inData.weapons   : [],
+    armors:    Array.isArray(inData?.armors)    ? inData.armors    : [],
+    spells:    Array.isArray(inData?.spells)    ? inData.spells    : [],
+    notes: typeof inData?.notes === "string" ? inData.notes : "",
+  };
+}
+
 function derivedHP(level:number, COS:number){ return Math.max(1, 8 + COS + Math.max(0,level-1)*2); }
 function calcDIF(des:number, armor:number, mod:number=0){ return 10 + Math.max(0,des) + Math.max(0,armor) + (mod||0); }
+const clamp = (n:number, a:number, b:number) => Math.max(a, Math.min(b, n));
 
 export default function SheetPage(){
   const [data,setData] = useState<PCData>(EMPTY_PC);
@@ -45,9 +61,10 @@ export default function SheetPage(){
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json().catch(()=> ({}));
         if (!alive) return;
-        if (j?.data) setData(j.data as PCData);
-      } catch (e:any) {
+        setData(j?.data ? normalizePC(j.data) : EMPTY_PC);
+      } catch {
         setStatus("Impossibile caricare la scheda.");
+        setData(EMPTY_PC);
       } finally {
         if (alive) setLoading(false);
       }
@@ -55,12 +72,12 @@ export default function SheetPage(){
     return () => { alive = false; };
   }, []);
 
-  // Calcoli rapidi
-  const equippedArmor = useMemo(()=> data.armors.find(a=>a.equipped), [data.armors]);
+  // Calcoli rapidi (robusti)
+  const equippedArmor = useMemo(()=> (data?.armors || []).find(a=>a.equipped), [data?.armors]);
   const armorBonus = equippedArmor?.bonusD6 ?? 0;
 
-  const sugHP = useMemo(()=> derivedHP(data.ident.level||1, data.attrs.COS||0), [data.ident.level, data.attrs.COS]);
-  const dif   = useMemo(()=> calcDIF(data.attrs.DES||0, armorBonus, data.quick.difMod||0), [data.attrs.DES, armorBonus, data.quick.difMod]);
+  const sugHP = useMemo(()=> derivedHP(data?.ident?.level ?? 1, data?.attrs?.COS ?? 0), [data?.ident?.level, data?.attrs?.COS]);
+  const dif   = useMemo(()=> calcDIF(data?.attrs?.DES ?? 0, armorBonus, data?.quick?.difMod ?? 0), [data?.attrs?.DES, armorBonus, data?.quick?.difMod]);
 
   // spells
   const [spellQuery,setSpellQuery] = useState("");
@@ -92,14 +109,35 @@ export default function SheetPage(){
     setSaving(true);
     setStatus("");
     try {
+      // pulizia/clamp minimi prima di inviare
+      const payload = normalizePC({
+        ...data,
+        ident: { ...data.ident, level: clamp(data.ident.level ?? 1, 1, 50) },
+        attrs: {
+          FOR: clamp(data.attrs.FOR ?? 0, 0, 20),
+          DES: clamp(data.attrs.DES ?? 0, 0, 20),
+          COS: clamp(data.attrs.COS ?? 0, 0, 20),
+          INT: clamp(data.attrs.INT ?? 0, 0, 20),
+          SAP: clamp(data.attrs.SAP ?? 0, 0, 20),
+          CAR: clamp(data.attrs.CAR ?? 0, 0, 20),
+        },
+        quick: {
+          hp: clamp(data.quick?.hp ?? 0, 0, 999),
+          foc: clamp(data.quick?.foc ?? 0, 0, 99),
+          difMod: clamp(data.quick?.difMod ?? 0, -20, 50),
+        },
+      });
+
       const r = await fetch("/api/player/sheet", {
         method: "POST",
         headers: { "Content-Type":"application/json" },
-        body: JSON.stringify(data),
+        // Molte API del progetto usano il wrapper { data: ... }
+        body: JSON.stringify({ data: payload }),
       });
+
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setStatus("Salvato ✅");
-    } catch (e:any) {
+    } catch {
       setStatus("Errore nel salvataggio");
     } finally {
       setSaving(false);
@@ -161,22 +199,22 @@ export default function SheetPage(){
         <section className="grid md:grid-cols-3 gap-3">
           <QuickCard title="HP" icon="❤️">
             <div className="flex items-center gap-2">
-              <input type="number" className="input text-center w-24" value={data.quick.hp} onChange={e=>setData(d=>({...d, quick:{...d.quick, hp:parseInt(e.target.value||"0")}}))}/>
+              <input type="number" className="input text-center w-24" value={data.quick?.hp ?? 0} onChange={e=>setData(d=>({...d, quick:{...d.quick, hp:parseInt(e.target.value||"0")}}))}/>
               <span className="hint">Suggerito <b className="text-zinc-200">{sugHP}</b></span>
             </div>
           </QuickCard>
           <QuickCard title="DIF" icon="🛡️">
             <div className="flex items-baseline gap-2">
               <div className="text-xl font-semibold">{dif}</div>
-              <span className="hint">10 + DES ({data.attrs.DES||0}) + Arm. ({armorBonus}d6) + Mod.</span>
+              <span className="hint">10 + DES ({data.attrs?.DES ?? 0}) + Arm. ({armorBonus}d6) + Mod.</span>
             </div>
             <div className="mt-1 flex items-center gap-2">
               <span className="label">Mod.</span>
-              <input type="number" className="input text-center w-24" value={data.quick.difMod||0} onChange={e=>setData(d=>({...d, quick:{...d.quick, difMod:parseInt(e.target.value||"0")}}))}/>
+              <input type="number" className="input text-center w-24" value={data.quick?.difMod ?? 0} onChange={e=>setData(d=>({...d, quick:{...d.quick, difMod:parseInt(e.target.value||"0")}}))}/>
             </div>
           </QuickCard>
           <QuickCard title="FOC" icon="✨">
-            <input type="number" className="input text-center w-24" value={data.quick.foc} onChange={e=>setData(d=>({...d, quick:{...d.quick, foc:parseInt(e.target.value||"0")}}))}/>
+            <input type="number" className="input text-center w-24" value={data.quick?.foc ?? 0} onChange={e=>setData(d=>({...d, quick:{...d.quick, foc:parseInt(e.target.value||"0")}}))}/>
           </QuickCard>
         </section>
 
@@ -186,7 +224,7 @@ export default function SheetPage(){
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-1">
             {(["FOR","DES","COS","INT","SAP","CAR"] as (keyof Attrs)[]).map(k=>(
               <Field key={k} label={k}>
-                <input type="number" className="input text-center" value={data.attrs[k]} onChange={e=>setData(d=>({...d, attrs:{...d.attrs, [k]:parseInt(e.target.value||"0")}}))}/>
+                <input type="number" className="input text-center" value={data.attrs?.[k] ?? 0} onChange={e=>setData(d=>({...d, attrs:{...d.attrs, [k]:parseInt(e.target.value||"0")}}))}/>
               </Field>
             ))}
           </div>
