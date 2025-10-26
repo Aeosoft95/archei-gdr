@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SPELLS_DB } from "@/data/spells";
 
+/* ===== Tipi ===== */
 type Attrs = { FOR:number; DES:number; COS:number; INT:number; SAP:number; CAR:number };
 type Ability = { id:string; name:string; rank:0|1|2|3|4; desc?:string };
 type Weapon = { id:string; name:string; notes?:string; damageSeg?:number; equipped?:boolean };
@@ -19,7 +20,12 @@ type PCData = {
   notes?: string;
 };
 
+/* ===== Utils ===== */
 const uid = () => Math.random().toString(36).slice(2,9);
+const clamp = (n:number, a:number, b:number) => Math.max(a, Math.min(b, n));
+function normStr(v:any, def=""){ return typeof v === "string" ? v : (v==null ? def : String(v)); }
+function normNum(v:any, def=0){ const n = Number(v); return Number.isFinite(n) ? n : def; }
+
 const EMPTY_PC:PCData = {
   ident:{ name:"", race:"", clazz:"", level:1, portraitUrl:"" },
   attrs:{ FOR:0, DES:0, COS:0, INT:0, SAP:0, CAR:0 },
@@ -27,9 +33,7 @@ const EMPTY_PC:PCData = {
   abilities:[], weapons:[], armors:[], spells:[], notes:""
 };
 
-// ===== Helpers =====
-function normStr(v:any, def=""){ return typeof v === "string" ? v : (v==null ? def : String(v)); }
-function normNum(v:any, def=0){ const n = Number(v); return Number.isFinite(n) ? n : def; }
+/* ===== Normalization (con shim legacy per mods.difMod) ===== */
 function normalizePC(inData:any): PCData {
   const b = EMPTY_PC;
 
@@ -48,19 +52,26 @@ function normalizePC(inData:any): PCData {
     equipped: !!w?.equipped,
   })) : [];
 
-  const armors: Armor[] = Array.isArray(inData?.armors) ? inData.armors.map((a:any)=>({
-    id: normStr(a?.id, uid()),
-    name: normStr(a?.name),
-    bonusD6: normNum(a?.bonusD6, 0),
-    notes: normStr(a?.notes),
-    equipped: !!a?.equipped,
-  })) : [];
+  const armors: Armor[] = Array.isArray(inData?.armors) ? inData.armors.map((a:any)=>([
+    normStr(a?.id, uid()),
+    normStr(a?.name),
+    normNum(a?.bonusD6, 0),
+    normStr(a?.notes),
+    !!a?.equipped,
+  ])).map(([id,name,bonusD6,notes,equipped])=>({ id, name, bonusD6, notes, equipped })) : [];
 
-  const spells: LearnedSpell[] = Array.isArray(inData?.spells) ? inData.spells.map((s:any)=>({
-    id: normStr(s?.id, uid()),
-    refId: normStr(s?.refId),
-    notes: normStr(s?.notes),
-  })) : [];
+  const spells: LearnedSpell[] = Array.isArray(inData?.spells) ? inData.spells.map((s:any)=>([
+    normStr(s?.id, uid()),
+    normStr(s?.refId),
+    normStr(s?.notes),
+  ])).map(([id,refId,notes])=>({ id, refId, notes })) : [];
+
+  // 🔧 Shim legacy: alcuni vecchi documenti usano mods.difMod → portalo in quick.difMod
+  const legacyDifMod = (inData?.mods && typeof inData.mods === "object")
+    ? normNum(inData?.mods?.difMod, NaN) : NaN;
+  const difMod = Number.isFinite(legacyDifMod)
+    ? legacyDifMod
+    : normNum(inData?.quick?.difMod, 0);
 
   return {
     ident:  {
@@ -81,17 +92,18 @@ function normalizePC(inData:any): PCData {
     quick:  {
       hp: normNum(inData?.quick?.hp, b.quick.hp),
       foc: normNum(inData?.quick?.foc, b.quick.foc),
-      difMod: normNum(inData?.quick?.difMod, 0),
+      difMod, // ← sempre presente
     },
     abilities, weapons, armors, spells,
     notes: normStr(inData?.notes, ""),
   };
 }
+
+/* ===== Calcoli ===== */
 function derivedHP(level:number, COS:number){ return Math.max(1, 8 + COS + Math.max(0,level-1)*2); }
 function calcDIF(des:number, armor:number, mod:number=0){ return 10 + Math.max(0,des) + Math.max(0,armor) + (mod||0); }
-const clamp = (n:number, a:number, b:number) => Math.max(a, Math.min(b, n));
 
-// ===== Local backup =====
+/* ===== Local backup ===== */
 const STORAGE_KEY = "pc:last";
 function readLocal(): PCData | null {
   try {
@@ -104,6 +116,7 @@ function writeLocal(data: PCData) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
 }
 
+/* ===== Pagina ===== */
 export default function SheetPage(){
   const [data,setData] = useState<PCData>(EMPTY_PC);
   const [loading,setLoading] = useState(true);
@@ -148,13 +161,13 @@ export default function SheetPage(){
     return () => { if (debTimer.current) clearTimeout(debTimer.current); };
   }, [data, loading]);
 
-  // Calcoli rapidi
+  // Calcoli rapidi (tutti con fallback sicuri)
   const equippedArmor = useMemo(()=> (data?.armors || []).find(a=>a.equipped), [data?.armors]);
   const armorBonus = equippedArmor?.bonusD6 ?? 0;
   const sugHP = useMemo(()=> derivedHP(data?.ident?.level ?? 1, data?.attrs?.COS ?? 0), [data?.ident?.level, data?.attrs?.COS]);
   const dif   = useMemo(()=> calcDIF(data?.attrs?.DES ?? 0, armorBonus, data?.quick?.difMod ?? 0), [data?.attrs?.DES, armorBonus, data?.quick?.difMod]);
 
-  // Spells
+  /* ===== Spells ===== */
   const [spellQuery,setSpellQuery] = useState("");
   const [spellKind,setSpellKind]   = useState<"all"|SpellKind>("all");
   const [spellTier,setSpellTier]   = useState<"all"|SpellTier>("all");
@@ -179,7 +192,7 @@ export default function SheetPage(){
   }
   function removeSpell(id:string){ setData(d=>({...d, spells:d.spells.filter(s=>s.id!==id)})); }
 
-  // Save: prova server, comunque aggiorna backup locale
+  /* ===== Save ===== */
   async function save() {
     setSaving(true);
     setStatus("");
