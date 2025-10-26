@@ -6,8 +6,9 @@ import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
 
 import { ChatProvider } from "@/lib/chat/bus";
-import ChatPanel from "@/components/table/ChatPanel";
 import RoomToolbar from "@/components/table/RoomToolbar";
+import AutoScaler from "@/components/layout/AutoScaler";
+import MiniChat from "@/components/table/MiniChat";
 
 type Room = {
   id: string;
@@ -98,8 +99,14 @@ export default function TableRoom() {
 
         <div className="grid md:grid-cols-3 gap-4">
           <div className="md:col-span-2 space-y-3">
-            <div className="p-4 rounded-xl bg-zinc-800">
-              Area di gioco (realtime)
+            {/* Area di gioco con auto-scaling */}
+            <div className="p-0 rounded-xl bg-zinc-800 h-[60vh] md:h-[70vh]">
+              <AutoScaler baseWidth={1280} baseHeight={720} className="h-full">
+                {/* Qui andrà la tua plancia/canvas/mappa */}
+                <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-zinc-300 rounded-xl">
+                  Area di gioco (auto-scaling)
+                </div>
+              </AutoScaler>
             </div>
           </div>
 
@@ -126,10 +133,8 @@ export default function TableRoom() {
         </div>
       </div>
 
-      {/* Chat flottante */}
-      <div className="fixed bottom-3 right-3 w-96 h-80 bg-zinc-900/90 border border-zinc-700 rounded-xl p-3 z-40">
-        <ChatPanel />
-      </div>
+      {/* Mini chat dock a scomparsa con badge non letti */}
+      <MiniChat roomCode={String(code)} />
     </ChatProvider>
   );
 }
