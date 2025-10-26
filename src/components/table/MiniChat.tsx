@@ -5,143 +5,132 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ChatPanel from "./ChatPanel";
 import { useChatBus } from "@/lib/chat/bus";
 
-type Pos = { x: number; y: number };
-
+/**
+ * MiniChat trascinabile + apertura auto (sopra/sotto) in base allo spazio
+ * - posizione (x,y) salvata per-stanza
+ * - badge non letti quando chiusa
+ * - apertura sopra se sotto non c'è spazio sufficiente; altrimenti sotto
+ */
 export default function MiniChat({ roomCode }: { roomCode: string }) {
-  const storageKeyOpen = useMemo(() => `minichat-open:${roomCode}`, [roomCode]);
-  const storageKeyCount = useMemo(() => `minichat-unread:${roomCode}`, [roomCode]);
-  const storageKeyPos = useMemo(() => `minichat-pos:${roomCode}`, [roomCode]);
+  const { messages, wsReady } = useChatBus();
 
-  const { messages, wsReady, me } = useChatBus();
+  const storagePos = useMemo(() => `minichat-pos:${roomCode}`, [roomCode]);
+  const storageOpen = useMemo(() => `minichat-open:${roomCode}`, [roomCode]);
+  const storageUnread = useMemo(() => `minichat-unread:${roomCode}`, [roomCode]);
 
+  // posizione assoluta del bottone (fisso alla top-left del bottone)
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
 
-  // posizione fissata con left/top, trascinabile
-  const [pos, setPos] = useState<Pos>({ x: 0, y: 0 });
-  const draggingRef = useRef<{ dx: number; dy: number } | null>(null);
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  // refs per misura
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
-  // ripristina stato
+  // inizializza posizione di default (in basso a destra con margini)
   useEffect(() => {
+    const M = 16; // margin
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let defX = vw - 280; // vicino al bordo destro
+    let defY = vh - 80;  // vicino al bordo inferiore
     try {
-      const v = localStorage.getItem(storageKeyOpen);
-      if (v === "1") setOpen(true);
-      const u = parseInt(localStorage.getItem(storageKeyCount) || "0", 10);
-      if (!isNaN(u)) setUnread(u);
-
-      const saved = localStorage.getItem(storageKeyPos);
+      const saved = localStorage.getItem(storagePos);
       if (saved) {
-        const p = JSON.parse(saved) as Pos;
-        setPos(p);
-      } else {
-        // default: in basso a destra con un piccolo margine
-        const init = () => {
-          const w = Math.min(window.innerWidth, 384); // ~w-96
-          const h = Math.min(window.innerHeight, 320); // ~h-80
-          const x = Math.max(12, window.innerWidth - w - 12);
-          const y = Math.max(12, window.innerHeight - h - 12);
-          setPos({ x, y });
-        };
-        init();
-        window.setTimeout(init, 0);
+        const obj = JSON.parse(saved);
+        if (typeof obj?.x === "number" && typeof obj?.y === "number") {
+          defX = obj.x; defY = obj.y;
+        }
       }
     } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    setPos(clampToViewport({ x: defX, y: defY }, M));
+  }, [storagePos]);
 
-  // salva open/close
+  // ripristina open/unread
   useEffect(() => {
-    try { localStorage.setItem(storageKeyOpen, open ? "1" : "0"); } catch {}
+    try {
+      if (localStorage.getItem(storageOpen) === "1") setOpen(true);
+      const u = parseInt(localStorage.getItem(storageUnread) || "0", 10);
+      if (!isNaN(u)) setUnread(u);
+    } catch {}
+  }, [storageOpen, storageUnread]);
+
+  // salva stato open
+  useEffect(() => {
+    try { localStorage.setItem(storageOpen, open ? "1" : "0"); } catch {}
     if (open) {
       setUnread(0);
-      try { localStorage.setItem(storageKeyCount, "0"); } catch {}
+      try { localStorage.setItem(storageUnread, "0"); } catch {}
     }
-  }, [open, storageKeyOpen, storageKeyCount]);
+  }, [open, storageOpen, storageUnread]);
 
-  // ESC per chiudere
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // non letti (solo non miei)
+  // conteggio non letti quando chiusa
   const prevLenRef = useRef(0);
   useEffect(() => {
     const len = messages.length;
     const prev = prevLenRef.current;
     prevLenRef.current = len;
-
     if (!open && len > prev) {
-      const mineId = me?.id ? String(me.id) : undefined;
-      const newly = messages.slice(prev);
-      const inc = newly.reduce((acc, m: any) => {
-        const notifiable = m.type === "chat" || m.type === "dice" || m.type === "system";
-        const fromId = m?.from?.id ? String(m.from.id) : undefined;
-        if (notifiable && (!mineId || fromId !== mineId)) return acc + 1;
-        return acc;
-      }, 0);
-      if (inc > 0) {
-        const next = unread + inc;
-        setUnread(next);
-        try { localStorage.setItem(storageKeyCount, String(next)); } catch {}
-      }
+      const delta = len - prev;
+      const next = unread + delta;
+      setUnread(next);
+      try { localStorage.setItem(storageUnread, String(next)); } catch {}
     }
-  }, [messages, open, me?.id, unread, storageKeyCount]);
+  }, [messages.length, open, unread, storageUnread]);
 
-  // drag helpers
-  const clampPos = (x: number, y: number) => {
-    const el = rootRef.current;
-    const pad = 8;
-    const w = el ? el.offsetWidth : 360;
-    const h = el ? el.offsetHeight : 320;
-    const maxX = Math.max(0, window.innerWidth - w - pad);
-    const maxY = Math.max(0, window.innerHeight - h - pad);
-    return { x: Math.min(Math.max(pad, x), maxX), y: Math.min(Math.max(pad, y), maxY) };
+  // drag
+  const draggingRef = useRef<{ dx: number; dy: number; startX: number; startY: number } | null>(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    draggingRef.current = {
+      dx: e.clientX - rect.left,
+      dy: e.clientY - rect.top,
+      startX: rect.left,
+      startY: rect.top,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!draggingRef.current) return;
+    const M = 8;
+    const { dx, dy } = draggingRef.current;
+    const x = e.clientX - dx;
+    const y = e.clientY - dy;
+    const clamped = clampToViewport({ x, y }, M);
+    setPos(clamped);
+    try { localStorage.setItem(storagePos, JSON.stringify(clamped)); } catch {}
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    draggingRef.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
   };
 
-  const startDrag = (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
-    const clientX = "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    draggingRef.current = { dx: clientX - pos.x, dy: clientY - pos.y };
-
-    const onMove = (ev: MouseEvent | TouchEvent) => {
-      const mx = (ev as TouchEvent).touches ? (ev as TouchEvent).touches[0].clientX : (ev as MouseEvent).clientX;
-      const my = (ev as TouchEvent).touches ? (ev as TouchEvent).touches[0].clientY : (ev as MouseEvent).clientY;
-      const d = draggingRef.current!;
-      const np = clampPos(mx - d.dx, my - d.dy);
-      setPos(np);
+  // ricalcola clamp su resize
+  useEffect(() => {
+    const onResize = () => {
+      const M = 8;
+      setPos(p => clampToViewport(p, M));
     };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
-    const onUp = () => {
-      draggingRef.current = null;
-      window.removeEventListener("mousemove", onMove as any);
-      window.removeEventListener("mouseup", onUp as any);
-      window.removeEventListener("touchmove", onMove as any);
-      window.removeEventListener("touchend", onUp as any);
-      try { localStorage.setItem(storageKeyPos, JSON.stringify(pos)); } catch {}
-    };
-
-    window.addEventListener("mousemove", onMove as any);
-    window.addEventListener("mouseup", onUp as any);
-    window.addEventListener("touchmove", onMove as any, { passive: false });
-    window.addEventListener("touchend", onUp as any);
-  };
+  // calcola apertura auto: sopra o sotto?
+  const placement = useAutoPlacement(pos, btnRef, panelRef);
 
   return (
     <div
-      ref={rootRef}
       className="fixed z-40"
-      style={{ left: pos.x, top: pos.y }}
+      style={{ left: Math.round(pos.x), top: Math.round(pos.y) }}
     >
-      {/* pulsante toggle (draggable quando chiusa) */}
+      {/* Pulsante toggle (draggable) */}
       <button
-        onMouseDown={!open ? startDrag : undefined}
-        onTouchStart={!open ? startDrag : undefined}
-        onClick={() => setOpen(v => !v)}
-        className="relative px-3 py-2 rounded-full bg-zinc-800 border border-zinc-700 text-sm hover:bg-zinc-700"
+        ref={btnRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onDoubleClick={() => setOpen(v => !v)}
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        className="relative px-3 py-2 rounded-full bg-zinc-800 border border-zinc-700 text-sm hover:bg-zinc-700 select-none cursor-grab active:cursor-grabbing"
         aria-label={open ? "Chiudi chat" : "Apri chat"}
       >
         {open ? "Chiudi chat" : "Apri chat"}
@@ -155,32 +144,79 @@ export default function MiniChat({ roomCode }: { roomCode: string }) {
         </span>
       </button>
 
-      {/* pannello */}
+      {/* Pannello (assoluto relativo al bottone) */}
       <div
-        className={`mt-2 border border-zinc-700 rounded-xl shadow-xl bg-zinc-900/90 transition-all
-          ${open ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}
-          w-[92vw] h-[45vh] sm:w-96 sm:h-80
+        ref={panelRef}
+        className={`absolute w-96 h-80 bg-zinc-900/90 border border-zinc-700 rounded-xl p-3 shadow-xl transition-all
+          ${open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}
         `}
+        style={
+          placement === "above"
+            ? { bottom: (btnRef.current?.offsetHeight || 40) + 8, left: 0 }
+            : { top: (btnRef.current?.offsetHeight || 40) + 8, left: 0 }
+        }
       >
-        {/* barra superiore (draggable quando aperta) */}
-        <div
-          className="h-8 px-3 flex items-center justify-between border-b border-zinc-700 cursor-move select-none"
-          onMouseDown={startDrag}
-          onTouchStart={startDrag}
-        >
-          <span className="text-xs text-zinc-400">Chat</span>
-          <button
-            className="text-xs text-zinc-400 hover:text-white"
-            onClick={() => setOpen(false)}
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="p-3 h-[calc(100%-2rem)]">
-          <ChatPanel />
-        </div>
+        <ChatPanel />
       </div>
     </div>
   );
+}
+
+/** Tiene il bottone dentro la viewport, con margine M */
+function clampToViewport(p: { x: number; y: number }, M: number): { x: number; y: number } {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  // dimensione stimata del bottone (fallback)
+  const BW = 140, BH = 40;
+  let x = p.x, y = p.y;
+  if (x < M) x = M;
+  if (y < M) y = M;
+  if (x > vw - BW - M) x = vw - BW - M;
+  if (y > vh - BH - M) y = vh - BH - M;
+  return { x, y };
+}
+
+/** Decide se aprire la chat sopra o sotto al bottone in base allo spazio disponibile */
+function useAutoPlacement(
+  pos: { x: number; y: number },
+  btnRef: React.RefObject<HTMLButtonElement>,
+  panelRef: React.RefObject<HTMLDivElement>
+): "above" | "below" {
+  const [place, setPlace] = useState<"above" | "below">("below");
+
+  useEffect(() => {
+    const vh = window.innerHeight;
+    const btnH = btnRef.current?.offsetHeight ?? 40;
+    const panelH = panelRef.current?.offsetHeight ?? 320;
+    const margin = 12;
+
+    const spaceBelow = vh - (pos.y + btnH);
+    const spaceAbove = pos.y;
+
+    // Se sotto non c'è abbastanza spazio per il pannello → apri sopra, altrimenti sotto
+    if (spaceBelow < panelH + margin && spaceAbove >= panelH + margin) {
+      setPlace("above");
+    } else {
+      setPlace("below");
+    }
+  }, [pos.x, pos.y, btnRef.current?.offsetHeight, panelRef.current?.offsetHeight]);
+
+  useEffect(() => {
+    const onResize = () => {
+      const vh = window.innerHeight;
+      const btnH = btnRef.current?.offsetHeight ?? 40;
+      const panelH = panelRef.current?.offsetHeight ?? 320;
+      const margin = 12;
+      const spaceBelow = vh - (pos.y + btnH);
+      const spaceAbove = pos.y;
+      if (spaceBelow < panelH + margin && spaceAbove >= panelH + margin) {
+        setPlace("above");
+      } else {
+        setPlace("below");
+      }
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [pos.y]);
+
+  return place;
 }
