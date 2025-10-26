@@ -6,6 +6,10 @@ import DiceRoller from "../tools/DiceRoller";
 import ChatPanel from "./ChatPanel";
 import { Button } from "../ui/button";
 
+// NEW: mini scheda
+import MiniCharacterCard from "@/components/sheet/MiniCharacterCard";
+import { EMPTY_PC } from "@/types/character";
+
 type Props = {
   roomCode: string; // es. ABC123
   isGM?: boolean;
@@ -90,6 +94,12 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
     };
   }, []);
 
+  // reset rapido della larghezza salvata (doppio click sulla maniglia)
+  const resetWidth = () => {
+    try { localStorage.removeItem(storageKeyWidth); } catch {}
+    setWidth(null);
+  };
+
   return (
     <>
       {/* Toggle flottante */}
@@ -156,10 +166,7 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
             {tab === "dice" && <DiceRoller />}
 
             {tab === "sheet" && (
-              <PlaceholderCard
-                title="Scheda PG (rapida)"
-                text="Qui mostreremo una scheda sintetica collegata alla Scheda PG principale."
-              />
+              <MiniCharacterCard data={EMPTY_PC /* TODO: sostituire con scheda reale utente */} />
             )}
 
             {tab === "inventory" && (
@@ -180,15 +187,15 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
 
         {/* maniglia di resize (bordo sinistro) */}
         <div
-          title="Trascina per cambiare larghezza"
+          title="Trascina per cambiare larghezza (doppio clic per reset)"
           className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
           onMouseDown={(e) => {
             draggingRef.current = true;
-            // feedback visivo durante il drag
             document.body.style.userSelect = "none";
             document.body.style.cursor = "col-resize";
             e.preventDefault();
           }}
+          onDoubleClick={resetWidth}
         />
       </aside>
     </>
