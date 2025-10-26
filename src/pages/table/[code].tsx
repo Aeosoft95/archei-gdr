@@ -84,7 +84,11 @@ export default function TableRoom() {
               </span>
             )}
             <button
-              onClick={() => navigator.clipboard.writeText(room.inviteCode)}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(room.inviteCode);
+                } catch {}
+              }}
               className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-sm"
             >
               Copia invito
@@ -122,7 +126,7 @@ export default function TableRoom() {
         </div>
       </div>
 
-      {/* Chat flottante (posizionamento base; la puoi spostare dove preferisci) */}
+      {/* Chat flottante */}
       <div className="fixed bottom-3 right-3 w-96 h-80 bg-zinc-900/90 border border-zinc-700 rounded-xl p-3 z-40">
         <ChatPanel />
       </div>
