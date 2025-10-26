@@ -51,11 +51,6 @@ async function getWsToken(): Promise<string | undefined> {
   return undefined;
 }
 
-// id client univoco per dedup
-function newCid() {
-  return Math.random().toString(36).slice(2) + "-" + Math.random().toString(36).slice(2);
-}
-
 export function ChatProvider({
   roomCode,
   children,
@@ -67,9 +62,6 @@ export function ChatProvider({
   const [wsReady, setWsReady] = useState(false);
   const [me, setMe] = useState<{ id?: string; name?: string } | undefined>(undefined);
   const wsRef = useRef<WebSocket | null>(null);
-
-  // cids pendenti: eventi che abbiamo inviato e che rientreranno dal WS
-  const pending = useRef<Set<string>>(new Set());
 
   // Connessione WS unica
   useEffect(() => {
@@ -88,55 +80,56 @@ export function ChatProvider({
 
         ws.onmessage = (ev) => {
           if (closed) return;
-          let msg: any = null;
-          try { msg = JSON.parse(ev.data); } catch { return; }
+          let raw: any = null;
+          try { raw = JSON.parse(ev.data); } catch { return; }
 
-          // dedup: se rientra un nostro echo con cid noto → ignora
-          if (msg?.cid && pending.current.has(msg.cid)) {
-            pending.current.delete(msg.cid);
-            return;
+          // Normalizza: wrapper broadcast { type:"broadcast", payload:{...}, from, ts }
+          const now = Date.now();
+          let msg = raw;
+          if (raw?.type === "broadcast" && raw?.payload) {
+            msg = {
+              ...raw.payload,
+              from: raw.from ?? raw.payload?.from,
+              ts: raw.ts ?? raw.payload?.ts ?? now,
+            };
           }
 
-          // Normalizzazioni
+          // Routing tipizzato
           if (msg?.type === "welcome") {
             setMe(msg?.from || msg?.user);
-            setMessages((curr) => [...curr, { type: "system", text: "Connesso alla stanza.", ts: Date.now() }]);
+            setMessages((curr) => [...curr, { type: "system", text: "Connesso alla stanza.", ts: now }]);
             return;
           }
 
           if (msg?.type === "system" && msg.text) {
-            setMessages((curr) => [...curr, { type: "system", text: msg.text, ts: msg.ts || Date.now() }]);
+            setMessages((curr) => [...curr, { type: "system", text: msg.text, ts: msg.ts || now }]);
             return;
           }
 
-          // Caso server che incapsula in payload
-          const payload = msg?.payload && typeof msg.payload === "object" ? msg.payload : msg;
-
-          if (payload?.type === "chat" && payload.text) {
+          if (msg?.type === "chat" && msg.text) {
             setMessages((curr) => [
               ...curr,
-              { type: "chat", from: msg.from, text: payload.text, ts: payload.ts || msg.ts || Date.now() },
+              { type: "chat", from: msg.from, text: msg.text, ts: msg.ts || now },
             ]);
             return;
           }
 
-          if (payload?.type === "dice" && payload.expr) {
+          if (msg?.type === "dice" && (msg.expr || msg.formula)) {
             setMessages((curr) => [
               ...curr,
               {
                 type: "dice",
                 from: msg.from,
-                expr: payload.expr || payload.formula, // compat
-                total: Number(payload.total),
-                detail: payload.detail || payload.text,
-                ts: payload.ts || msg.ts || Date.now(),
+                expr: msg.expr || msg.formula,
+                total: Number(msg.total),
+                detail: msg.detail || msg.text,
+                ts: msg.ts || now,
               },
             ]);
             return;
           }
 
-          // fallback: append raw
-          setMessages((curr) => [...curr, { ...(msg || {}), ts: msg?.ts || Date.now() }]);
+          // NIENTE fallback (evitiamo duplicati/spam)
         };
 
         ws.onclose = () => { setWsReady(false); };
@@ -150,51 +143,28 @@ export function ChatProvider({
       try { wsRef.current?.close(); } catch {}
       wsRef.current = null;
       setWsReady(false);
-      pending.current.clear();
     };
   }, [roomCode]);
 
-  // API: chat testuale
+  // API: chat testuale — niente eco locale, lasciamo al broadcast
   const sendChat = useCallback((text: string) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== ws.OPEN) return false;
-    const cid = newCid();
-    pending.current.add(cid);
-    ws.send(JSON.stringify({ type: "chat", text, cid }));
-    // eco locale immediato
-    setMessages((curr) => [...curr, { type: "chat", from: me, text, ts: Date.now() }]);
+    ws.send(JSON.stringify({ type: "chat", text }));
     return true;
-  }, [me]);
+  }, []);
 
-  // API: eventi dai tool → WS + eco locale (solo per alcuni tipi)
+  // API: eventi dai tool → WS (niente eco locale per chat/dice)
   const emit = useCallback((evt: ChatEvent) => {
     const ws = wsRef.current;
-    const withCid = { ...evt, cid: newCid() };
-
     if (ws && ws.readyState === ws.OPEN) {
-      pending.current.add(withCid.cid as string);
-      ws.send(JSON.stringify(withCid));
+      ws.send(JSON.stringify(evt));
     }
-
-    // eco locale solo per chat/dice/system
-    if (evt.type === "dice") {
-      setMessages((curr) => [
-        ...curr,
-        {
-          type: "dice",
-          from: me,
-          expr: evt.expr,
-          total: evt.total,
-          detail: evt.detail,
-          ts: Date.now(),
-        },
-      ]);
-    } else if (evt.type === "chat" && evt.text) {
-      setMessages((curr) => [...curr, { type: "chat", from: me, text: evt.text, ts: Date.now() }]);
-    } else if (evt.type === "system" && (evt as any).text) {
+    // opzionale: eco locale solo per system
+    if (evt.type === "system" && (evt as any).text) {
       setMessages((curr) => [...curr, { type: "system", text: (evt as any).text, ts: Date.now() }]);
     }
-  }, [me]);
+  }, []);
 
   const value = useMemo<ChatContextValue>(
     () => ({ messages, wsReady, me, sendChat, emit }),
