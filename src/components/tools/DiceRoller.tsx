@@ -22,12 +22,14 @@ export default function DiceRoller() {
   const [last, setLast] = useState("");
 
   function partToString(p: PartResult): string {
-    if (p.kind === "dice") {
-      const rolls = `[${p.rolls.join(",")}]`;
-      return p.sign < 0 ? `-${rolls}` : rolls;
+    if ((p as any).kind === "dice") {
+      const pd = p as any;
+      const rolls = `[${pd.rolls.join(",")}]`;
+      return pd.sign < 0 ? `-${rolls}` : rolls;
     }
-    if (p.kind === "mod") {
-      return (p.sign < 0 ? "-" : "+") + String(p.value);
+    if ((p as any).kind === "mod") {
+      const pm = p as any;
+      return (pm.sign < 0 ? "-" : "+") + String(pm.value);
     }
     return "?";
   }
@@ -96,10 +98,9 @@ export default function DiceRoller() {
         <div className="flex items-center gap-1">
           <Button
             variant="secondary"
-            size="icon"
             onClick={() => adjustDice(-1)}
             aria-label="Diminuisci dadi"
-            className="w-8 h-8"
+            className="w-8 h-8 p-0"
           >
             –
           </Button>
@@ -114,10 +115,9 @@ export default function DiceRoller() {
 
           <Button
             variant="secondary"
-            size="icon"
             onClick={() => adjustDice(1)}
             aria-label="Aumenta dadi"
-            className="w-8 h-8"
+            className="w-8 h-8 p-0"
           >
             +
           </Button>
