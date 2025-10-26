@@ -199,7 +199,7 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
                   </div>
                 )}
 
-                <MiniCharacterCard data={pc ?? EMPTY_PC} loading={pcLoading} />
+                <MiniCharacterCard data={pc ?? EMPTY_PC} />
               </div>
             )}
 
