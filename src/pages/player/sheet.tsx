@@ -128,6 +128,51 @@ export default function SheetPage(){
   const [status,setStatus] = useState<string>("");
   const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /* --- SAFETY BELT 1: normalizza TUTTO al mount (contro stati "mozzi") --- */
+  useEffect(() => {
+    setData(d => {
+      const fixed = { ...(d ?? {}) } as any;
+
+      if (!fixed.quick || typeof fixed.quick !== "object") fixed.quick = {};
+      fixed.quick = {
+        hp: Number.isFinite(Number(fixed.quick.hp)) ? Number(fixed.quick.hp) : 10,
+        foc: Number.isFinite(Number(fixed.quick.foc)) ? Number(fixed.quick.foc) : 3,
+        difMod: Number.isFinite(Number(fixed.quick.difMod)) ? Number(fixed.quick.difMod) : 0,
+      };
+
+      fixed.attrs = {
+        FOR: Number(fixed?.attrs?.FOR ?? 0),
+        DES: Number(fixed?.attrs?.DES ?? 0),
+        COS: Number(fixed?.attrs?.COS ?? 0),
+        INT: Number(fixed?.attrs?.INT ?? 0),
+        SAP: Number(fixed?.attrs?.SAP ?? 0),
+        CAR: Number(fixed?.attrs?.CAR ?? 0),
+      };
+
+      fixed.armors    = Array.isArray(fixed.armors)    ? fixed.armors    : [];
+      fixed.abilities = Array.isArray(fixed.abilities) ? fixed.abilities : [];
+      fixed.weapons   = Array.isArray(fixed.weapons)   ? fixed.weapons   : [];
+      fixed.spells    = Array.isArray(fixed.spells)    ? fixed.spells    : [];
+
+      return fixed as PCData;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* --- SAFETY BELT 2: se per qualsiasi motivo quick/difMod diventano undefined, ripristina --- */
+  useEffect(() => {
+    if (!data?.quick || typeof data.quick !== "object" || data.quick.difMod == null) {
+      setData(d => ({
+        ...(d ?? EMPTY_PC),
+        quick: {
+          hp: Number(d?.quick?.hp ?? 10),
+          foc: Number(d?.quick?.foc ?? 3),
+          difMod: Number(d?.quick?.difMod ?? 0),
+        },
+      }));
+    }
+  }, [data?.quick]);
+
   // Load: API → fallback localStorage
   useEffect(() => {
     let alive = true;
