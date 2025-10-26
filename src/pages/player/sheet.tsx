@@ -52,19 +52,25 @@ function normalizePC(inData:any): PCData {
     equipped: !!w?.equipped,
   })) : [];
 
-  const armors: Armor[] = Array.isArray(inData?.armors) ? inData.armors.map((a:any)=>([
-    normStr(a?.id, uid()),
-    normStr(a?.name),
-    normNum(a?.bonusD6, 0),
-    normStr(a?.notes),
-    !!a?.equipped,
-  ])).map(([id,name,bonusD6,notes,equipped])=>({ id, name, bonusD6, notes, equipped })) : [];
+  // ✅ Niente tuple destructuring: mapping tipizzato esplicito
+  const armors: Armor[] = Array.isArray(inData?.armors)
+    ? inData.armors.map((a:any) => ({
+        id: normStr(a?.id, uid()),
+        name: normStr(a?.name),
+        bonusD6: normNum(a?.bonusD6, 0),
+        notes: normStr(a?.notes),
+        equipped: !!a?.equipped,
+      }))
+    : [];
 
-  const spells: LearnedSpell[] = Array.isArray(inData?.spells) ? inData.spells.map((s:any)=>([
-    normStr(s?.id, uid()),
-    normStr(s?.refId),
-    normStr(s?.notes),
-  ])).map(([id,refId,notes])=>({ id, refId, notes })) : [];
+  // ✅ Niente tuple destructuring anche qui
+  const spells: LearnedSpell[] = Array.isArray(inData?.spells)
+    ? inData.spells.map((s:any) => ({
+        id: normStr(s?.id, uid()),
+        refId: normStr(s?.refId),
+        notes: normStr(s?.notes),
+      }))
+    : [];
 
   // 🔧 Shim legacy: alcuni vecchi documenti usano mods.difMod → portalo in quick.difMod
   const legacyDifMod = (inData?.mods && typeof inData.mods === "object")
