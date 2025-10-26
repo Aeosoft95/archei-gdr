@@ -1,7 +1,7 @@
 // src/pages/sheet.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SPELLS_DB } from "@/data/spells";
 
 type Attrs = { FOR:number; DES:number; COS:number; INT:number; SAP:number; CAR:number };
@@ -27,7 +27,7 @@ const EMPTY_PC:PCData = {
   abilities:[], weapons:[], armors:[], spells:[], notes:""
 };
 
-// ---------- Helpers ----------
+// ===== Helpers =====
 function normalizePC(inData:any): PCData {
   const b = EMPTY_PC;
   return {
@@ -41,30 +41,53 @@ function normalizePC(inData:any): PCData {
     notes: typeof inData?.notes === "string" ? inData.notes : "",
   };
 }
-
 function derivedHP(level:number, COS:number){ return Math.max(1, 8 + COS + Math.max(0,level-1)*2); }
 function calcDIF(des:number, armor:number, mod:number=0){ return 10 + Math.max(0,des) + Math.max(0,armor) + (mod||0); }
 const clamp = (n:number, a:number, b:number) => Math.max(a, Math.min(b, n));
+
+// ===== Local backup =====
+const STORAGE_KEY = "pc:last";
+function readLocal(): PCData | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return normalizePC(JSON.parse(raw));
+  } catch { return null; }
+}
+function writeLocal(data: PCData) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+}
 
 export default function SheetPage(){
   const [data,setData] = useState<PCData>(EMPTY_PC);
   const [loading,setLoading] = useState(true);
   const [saving,setSaving] = useState(false);
   const [status,setStatus] = useState<string>("");
+  const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Carica dal server
+  // Load: API → fallback localStorage
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const r = await fetch("/api/player/sheet", { cache:"no-store" });
+        const r = await fetch("/api/player/sheet", { cache:"no-store", credentials:"include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json().catch(()=> ({}));
+        const incoming = j?.data ? normalizePC(j.data) : null;
         if (!alive) return;
-        setData(j?.data ? normalizePC(j.data) : EMPTY_PC);
+
+        if (incoming) {
+          setData(incoming);
+          writeLocal(incoming); // aggiorna cache locale allineata al server
+        } else {
+          // fallback locale se il server non ha (ancora) persistenza
+          const local = readLocal();
+          setData(local ?? EMPTY_PC);
+        }
       } catch {
-        setStatus("Impossibile caricare la scheda.");
-        setData(EMPTY_PC);
+        const local = readLocal();
+        setData(local ?? EMPTY_PC);
+        setStatus("Offline: caricata copia locale.");
       } finally {
         if (alive) setLoading(false);
       }
@@ -72,14 +95,21 @@ export default function SheetPage(){
     return () => { alive = false; };
   }, []);
 
-  // Calcoli rapidi (robusti)
+  // Auto-backup locale (debounced 500ms) ad ogni modifica
+  useEffect(() => {
+    if (loading) return; // evita il primo paint
+    if (debTimer.current) clearTimeout(debTimer.current);
+    debTimer.current = setTimeout(() => writeLocal(data), 500);
+    return () => { if (debTimer.current) clearTimeout(debTimer.current); };
+  }, [data, loading]);
+
+  // Calcoli rapidi
   const equippedArmor = useMemo(()=> (data?.armors || []).find(a=>a.equipped), [data?.armors]);
   const armorBonus = equippedArmor?.bonusD6 ?? 0;
-
   const sugHP = useMemo(()=> derivedHP(data?.ident?.level ?? 1, data?.attrs?.COS ?? 0), [data?.ident?.level, data?.attrs?.COS]);
   const dif   = useMemo(()=> calcDIF(data?.attrs?.DES ?? 0, armorBonus, data?.quick?.difMod ?? 0), [data?.attrs?.DES, armorBonus, data?.quick?.difMod]);
 
-  // spells
+  // Spells
   const [spellQuery,setSpellQuery] = useState("");
   const [spellKind,setSpellKind]   = useState<"all"|SpellKind>("all");
   const [spellTier,setSpellTier]   = useState<"all"|SpellTier>("all");
@@ -104,12 +134,11 @@ export default function SheetPage(){
   }
   function removeSpell(id:string){ setData(d=>({...d, spells:d.spells.filter(s=>s.id!==id)})); }
 
-  // Salva su server
+  // Save: prova server, comunque aggiorna backup locale
   async function save() {
     setSaving(true);
     setStatus("");
     try {
-      // pulizia/clamp minimi prima di inviare
       const payload = normalizePC({
         ...data,
         ident: { ...data.ident, level: clamp(data.ident.level ?? 1, 1, 50) },
@@ -128,17 +157,27 @@ export default function SheetPage(){
         },
       });
 
+      // Aggiorna subito backup locale (per sicurezza)
+      writeLocal(payload);
+
       const r = await fetch("/api/player/sheet", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type":"application/json" },
-        // Molte API del progetto usano il wrapper { data: ... }
-        body: JSON.stringify({ data: payload }),
+        body: JSON.stringify({ data: payload }), // se il tuo endpoint vuole data “raw”, sostituisci con: JSON.stringify(payload)
       });
 
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setStatus("Salvato ✅");
+      let ok = r.ok;
+      let msg = "";
+      try {
+        const jr = await r.json();
+        ok = ok && (jr?.ok !== false); // accettiamo sia true/undefined che assenza
+        if (jr?.message) msg = String(jr.message);
+      } catch { /* ignore */ }
+
+      setStatus(ok ? "Salvato ✅" : (msg || "Salvato in locale (server non ha confermato)"));
     } catch {
-      setStatus("Errore nel salvataggio");
+      setStatus("Offline: salvato in locale 💾");
     } finally {
       setSaving(false);
       setTimeout(()=> setStatus(""), 2500);
@@ -148,6 +187,7 @@ export default function SheetPage(){
   function resetLocal() {
     if (!confirm("Sicuro di resettare la scheda corrente?")) return;
     setData(EMPTY_PC);
+    writeLocal(EMPTY_PC);
   }
 
   if (loading) {
@@ -160,7 +200,7 @@ export default function SheetPage(){
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* HEADER COMPATTO (senza bottone Tavolo) */}
+      {/* HEADER */}
       <div className="sticky top-0 z-10 bg-zinc-950/85 backdrop-blur border-b border-zinc-800 px-4 py-2">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
           <span className="text-sm text-zinc-300 font-medium">Scheda Personaggio</span>
@@ -449,18 +489,3 @@ function QuickCard({title,icon,children}:{title:string;icon:string;children:Reac
   );
 }
 function Empty({text}:{text:string}){ return <div className="text-sm text-zinc-500">{text}</div>; }
-
-/* ===== Tailwind helper classes (se mancano, aggiungile nel CSS globale)
-.label { @apply text-xs text-zinc-400 mb-0.5; }
-.input { @apply w-full rounded-md bg-zinc-900/70 border border-zinc-800 px-2 py-1.5 text-sm outline-none focus:border-zinc-600; }
-.btn-primary { @apply rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-1.5; }
-.btn-subtle { @apply rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm px-3 py-1.5; }
-.btn-ghost  { @apply rounded-md border border-zinc-800 hover:bg-zinc-800 text-sm px-2 py-1; }
-.btn-disabled { @apply rounded-md bg-zinc-800 text-zinc-500 text-sm px-3 py-1.5 cursor-not-allowed; }
-.card { @apply rounded-xl border border-zinc-800 bg-zinc-900/60; }
-.subcard { @apply rounded-lg border border-zinc-800 bg-zinc-900/40 p-2; }
-.row { @apply rounded-lg border border-zinc-800 bg-zinc-900/40 p-2; }
-.meta { @apply text-xs text-zinc-500; }
-.chip { @apply text-xs rounded-md border border-zinc-800 bg-zinc-900/70 px-2 py-1; }
-.hint { @apply text-xs text-zinc-400; }
-*/
