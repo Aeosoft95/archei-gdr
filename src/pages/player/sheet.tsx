@@ -1,7 +1,8 @@
 // src/pages/sheet.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { SPELLS_DB } from "@/data/spells";
 
 type Attrs = { FOR:number; DES:number; COS:number; INT:number; SAP:number; CAR:number };
@@ -32,6 +33,15 @@ function calcDIF(des:number, armor:number, mod:number=0){ return 10 + Math.max(0
 
 export default function SheetPage(){
   const [data,setData] = useState<PCData>(EMPTY_PC);
+
+  // Link "Tavolo" → stanza corretta
+  const [roomCode, setRoomCode] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const code = localStorage.getItem("activeRoom");
+      if (code) setRoomCode(code);
+    } catch {}
+  }, []);
 
   const equippedArmor = useMemo(()=> data.armors.find(a=>a.equipped), [data.armors]);
   const armorBonus = equippedArmor?.bonusD6 ?? 0;
@@ -70,7 +80,12 @@ export default function SheetPage(){
       <div className="sticky top-0 z-10 bg-zinc-950/85 backdrop-blur border-b border-zinc-800 px-4 py-2">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 text-sm text-zinc-400">
-            <a href="/table" className="chip hover:bg-zinc-800">← Tavolo</a>
+            <Link
+              href={roomCode ? `/table/${roomCode}` : "/table"}
+              className="chip hover:bg-zinc-800"
+            >
+              ← Tavolo
+            </Link>
             <span className="text-zinc-600">/</span>
             <span className="text-zinc-300 font-medium">Scheda Personaggio</span>
           </div>
@@ -360,5 +375,17 @@ function QuickCard({title,icon,children}:{title:string;icon:string;children:Reac
 }
 function Empty({text}:{text:string}){ return <div className="text-sm text-zinc-500">{text}</div>; }
 
-/* ===== Tailwind utility classes (mettile nel tuo globals.css se non già presenti) =====
-   Se preferisci, puoi copiare le @apply sotto nel tuo CSS globale. */
+/* ===== Tailwind helper classes usate qui (aggiungile nel tuo CSS globale se mancano)
+.label { @apply text-xs text-zinc-400 mb-0.5; }
+.input { @apply w-full rounded-md bg-zinc-900/70 border border-zinc-800 px-2 py-1.5 text-sm outline-none focus:border-zinc-600; }
+.btn-primary { @apply rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-sm px-3 py-1.5; }
+.btn-subtle { @apply rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm px-3 py-1.5; }
+.btn-ghost  { @apply rounded-md border border-zinc-800 hover:bg-zinc-800 text-sm px-2 py-1; }
+.btn-disabled { @apply rounded-md bg-zinc-800 text-zinc-500 text-sm px-3 py-1.5 cursor-not-allowed; }
+.card { @apply rounded-xl border border-zinc-800 bg-zinc-900/60; }
+.subcard { @apply rounded-lg border border-zinc-800 bg-zinc-900/40 p-2; }
+.row { @apply rounded-lg border border-zinc-800 bg-zinc-900/40 p-2; }
+.meta { @apply text-xs text-zinc-500; }
+.chip { @apply text-xs rounded-md border border-zinc-800 bg-zinc-900/70 px-2 py-1; }
+.hint { @apply text-xs text-zinc-400; }
+*/
