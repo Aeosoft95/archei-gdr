@@ -8,7 +8,7 @@ const PORT = Number(process.env.PORT || process.env.WS_PORT || 8787);
 
 // HTTP server per rispondere a / e /health (utile per i check dell'edge)
 const server = http.createServer((req, res) => {
-  // CORS basico per debug (opzionale)
+  // CORS basico (opzionale)
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -32,43 +32,104 @@ const wss = new WebSocketServer({ server });
 
 type ClientInfo = {
   ws: WebSocket;
-  user: any;
+  user: { id: string; name?: string };
+  code: string;     // codice stanza (es. ABC123)
   isAlive: boolean;
 };
 const clients = new Set<ClientInfo>();
 
 function heartbeat(this: ClientInfo) { this.isAlive = true; }
 
+// Broadcast confinato alla stanza
+function broadcast(code: string, msg: any) {
+  for (const c of clients) {
+    if (c.code !== code) continue;
+    if (c.ws.readyState === WebSocket.OPEN) {
+      c.ws.send(JSON.stringify(msg));
+    }
+  }
+}
+
 wss.on("connection", (ws, req) => {
   const url = new URL(req.url || "/", "http://localhost");
-  const token = url.searchParams.get("token");
-  const user = token ? verifyToken(token) : null;
+  const token = url.searchParams.get("token") || "";
+  const code  = (url.searchParams.get("code") || "").toUpperCase();
 
-  if (!user) {
-    ws.send(JSON.stringify({ type: "error", msg: "Invalid token" }));
+  const user = token ? verifyToken(token) : null;
+  if (!user || !code) {
+    ws.send(JSON.stringify({ type: "error", msg: "Invalid token or code" }));
     ws.close();
     return;
   }
 
-  const info: ClientInfo = { ws, user, isAlive: true };
+  const info: ClientInfo = {
+    ws,
+    user: { id: (user as any).id, name: (user as any).name },
+    code,
+    isAlive: true,
+  };
   clients.add(info);
 
   ws.on("pong", heartbeat.bind(info));
-  ws.send(JSON.stringify({ type: "welcome", user }));
+
+  // Benvenuto solo al client entrante
+  ws.send(JSON.stringify({
+    type: "welcome",
+    code,
+    user: info.user,
+    ts: Date.now(),
+  }));
+
+  // Notifica join agli altri della stanza (opzionale)
+  broadcast(code, {
+    type: "system",
+    code,
+    text: `${info.user.name || "Utente"} è entrato nella stanza.`,
+    ts: Date.now(),
+  });
 
   ws.on("message", (raw) => {
     let payload: any = null;
     try { payload = JSON.parse(raw.toString()); }
-    catch { payload = { type: "text", text: raw.toString() }; }
+    catch { return; }
 
-    for (const c of clients) {
-      if (c.ws.readyState === WebSocket.OPEN) {
-        c.ws.send(JSON.stringify({ type: "broadcast", from: (user as any).name ?? "User", payload }));
-      }
+    const base = {
+      code,
+      from: { id: info.user.id, name: info.user.name || "User" },
+      ts: Date.now(),
+    };
+
+    // Accettiamo: {type:"chat", text}, {type:"dice", expr,total,detail}
+    if (payload.type === "chat" && typeof payload.text === "string") {
+      broadcast(code, { type: "chat", text: String(payload.text), ...base });
+      return;
     }
+
+    if (payload.type === "dice" && payload.expr) {
+      broadcast(code, {
+        type: "dice",
+        expr: String(payload.expr),
+        total: Number(payload.total),
+        detail: typeof payload.detail === "string" ? payload.detail : undefined,
+        ...base,
+      });
+      return;
+    }
+
+    // Fallback: inoltra come generico "broadcast" (debug)
+    broadcast(code, { type: "broadcast", payload, ...base });
   });
 
-  ws.on("close", () => { clients.delete(info); });
+  ws.on("close", () => {
+    clients.delete(info);
+    // Notifica leave (opzionale)
+    broadcast(code, {
+      type: "system",
+      code,
+      text: `${info.user.name || "Utente"} ha lasciato la stanza.`,
+      ts: Date.now(),
+    });
+  });
 });
 
 // Heartbeat anti-timeout (CDN-friendly)

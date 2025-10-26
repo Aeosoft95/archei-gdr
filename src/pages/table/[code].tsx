@@ -1,16 +1,20 @@
 // src/pages/table/[code].tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { useSession } from "next-auth/react";
+
+import { ChatProvider } from "@/lib/chat/bus";
+import ChatPanel from "@/components/table/ChatPanel";
+import RoomToolbar from "@/components/table/RoomToolbar";
 
 type Room = {
   id: string;
   title: string;
   description: string;
   date: string | null;
-  maxPlayers?: number;              // 👈 ora è presente (opzionale)
+  maxPlayers?: number;
   tags: string[];
   visibility: "public" | "private";
   inviteCode: string;
@@ -28,10 +32,6 @@ export default function TableRoom() {
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const token =
-    typeof window !== "undefined" ? localStorage.getItem("arch_token") : null;
-  const wsRef = useRef<WebSocket | null>(null);
-
   // carica dati stanza
   useEffect(() => {
     if (!code) return;
@@ -41,9 +41,7 @@ export default function TableRoom() {
           cache: "no-store",
         });
         const j = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(j?.error || `Errore ${res.status}`);
-        }
+        if (!res.ok) throw new Error(j?.error || `Errore ${res.status}`);
         setRoom(j);
       } catch (e: any) {
         setError(e?.message || "Errore di caricamento");
@@ -51,42 +49,7 @@ export default function TableRoom() {
     })();
   }, [code]);
 
-  // URL WS
-  const wsUrl = useMemo(() => {
-    const base = process.env.NEXT_PUBLIC_WS_URL || "";
-    if (!base) return null;
-    const qp = new URLSearchParams();
-    if (code) qp.set("room", code);
-    if (token) qp.set("token", token);
-    return `${base}?${qp.toString()}`;
-  }, [code, token]);
-
-  // connessione WS
-  useEffect(() => {
-    if (!wsUrl) return;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "join", code }));
-    };
-    ws.onmessage = (ev) => {
-      // TODO: dispatch su stato/store
-      // console.log("WS:", ev.data);
-    };
-    ws.onclose = () => {
-      wsRef.current = null;
-    };
-
-    return () => {
-      try {
-        ws.close();
-      } catch {}
-    };
-  }, [wsUrl, code]);
-
-  if (status === "loading")
-    return <div className="p-6">Caricamento sessione…</div>;
+  if (status === "loading") return <div className="p-6">Caricamento sessione…</div>;
 
   if (!session)
     return (
@@ -99,59 +62,70 @@ export default function TableRoom() {
     );
 
   if (error) return <div className="p-6 text-red-400">Errore: {error}</div>;
-  if (!room) return <div className="p-6">Caricamento stanza…</div>;
+  if (!room || !code) return <div className="p-6">Caricamento stanza…</div>;
 
-  const max = room.maxPlayers ?? 5; // 👈 fallback sicuro
+  const max = room.maxPlayers ?? 5;
 
   return (
-    <div className="min-h-screen bg-zinc-900 text-white p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          {room.title} <span className="text-zinc-400">#{room.inviteCode}</span>
-        </h1>
-        <div className="flex items-center gap-2">
-          {room.me.isGM && (
-            <span className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 text-xs uppercase tracking-wide">
-              GM
-            </span>
-          )}
-          <button
-            onClick={() => navigator.clipboard.writeText(room.inviteCode)}
-            className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-sm"
-          >
-            Copia invito
-          </button>
-        </div>
-      </div>
+    <ChatProvider roomCode={String(code)}>
+      {/* Toolbar laterale a scomparsa, uguale per ogni stanza */}
+      <RoomToolbar roomCode={String(code)} isGM={room.me.isGM} />
 
-      <div className="grid md:grid-cols-3 gap-4">
-        <div className="md:col-span-2 space-y-3">
-          <div className="p-4 rounded-xl bg-zinc-800">
-            Area di gioco (realtime)
+      {/* Contenuto principale stanza */}
+      <div className="min-h-screen bg-zinc-900 text-white p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">
+            {room.title} <span className="text-zinc-400">#{room.inviteCode}</span>
+          </h1>
+          <div className="flex items-center gap-2">
+            {room.me.isGM && (
+              <span className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 text-xs uppercase tracking-wide">
+                GM
+              </span>
+            )}
+            <button
+              onClick={() => navigator.clipboard.writeText(room.inviteCode)}
+              className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-sm"
+            >
+              Copia invito
+            </button>
           </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="p-4 rounded-xl bg-zinc-800">
-            <div className="text-sm text-zinc-400">Partecipanti</div>
-            <div className="mt-2 text-sm">
-              {room.participants.length} giocatori / max {max}
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="md:col-span-2 space-y-3">
+            <div className="p-4 rounded-xl bg-zinc-800">
+              Area di gioco (realtime)
             </div>
           </div>
 
-          {room.me.isGM && (
-            <div className="p-4 rounded-xl bg-zinc-800 space-y-2">
-              <div className="text-sm text-zinc-400 mb-1">Strumenti GM</div>
-              <button className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-sm">
-                Avvia scena (soon)
-              </button>
-              <button className="w-full px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 text-sm">
-                Impostazioni sessione (soon)
-              </button>
+          <div className="space-y-3">
+            <div className="p-4 rounded-xl bg-zinc-800">
+              <div className="text-sm text-zinc-400">Partecipanti</div>
+              <div className="mt-2 text-sm">
+                {room.participants.length} giocatori / max {max}
+              </div>
             </div>
-          )}
+
+            {room.me.isGM && (
+              <div className="p-4 rounded-xl bg-zinc-800 space-y-2">
+                <div className="text-sm text-zinc-400 mb-1">Strumenti GM</div>
+                <button className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-sm">
+                  Avvia scena (soon)
+                </button>
+                <button className="w-full px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 text-sm">
+                  Impostazioni sessione (soon)
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Chat flottante (posizionamento base; la puoi spostare dove preferisci) */}
+      <div className="fixed bottom-3 right-3 w-96 h-80 bg-zinc-900/90 border border-zinc-700 rounded-xl p-3 z-40">
+        <ChatPanel />
+      </div>
+    </ChatProvider>
   );
 }
