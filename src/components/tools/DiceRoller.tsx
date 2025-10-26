@@ -32,6 +32,19 @@ export default function DiceRoller() {
     return "?";
   }
 
+  /** aumenta o diminuisce il numero di dadi */
+  function adjustDice(delta: number) {
+    if (aimed) {
+      // modifica il numero di dadi del mirato (1..5)
+      setAimedDice((n) => Math.max(1, Math.min(5, n + delta)));
+    } else {
+      // modifica il pool nel campo input (Nd6)
+      const n = parseD6Pool(input) ?? 1;
+      const next = Math.max(1, Math.min(99, n + delta));
+      setInput(`${next}d6`);
+    }
+  }
+
   const onRoll = () => {
     try {
       const maybePool = parseD6Pool(input);
@@ -79,14 +92,38 @@ export default function DiceRoller() {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <input
-          className="flex-1 min-w-[160px] bg-zinc-900 text-white px-3 py-2 rounded-md border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Es. 5d6"
-          onKeyDown={(e) => { if (e.key === "Enter") onRoll(); }}
-        />
+        {/* input principale */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => adjustDice(-1)}
+            aria-label="Diminuisci dadi"
+            className="w-8 h-8"
+          >
+            –
+          </Button>
 
+          <input
+            className="w-28 text-center bg-zinc-900 text-white px-3 py-2 rounded-md border border-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="5d6"
+            onKeyDown={(e) => { if (e.key === "Enter") onRoll(); }}
+          />
+
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={() => adjustDice(1)}
+            aria-label="Aumenta dadi"
+            className="w-8 h-8"
+          >
+            +
+          </Button>
+        </div>
+
+        {/* toggle mirato */}
         <label className="flex items-center gap-2 text-sm text-zinc-300">
           <input
             type="checkbox"
@@ -96,6 +133,7 @@ export default function DiceRoller() {
           Tiro mirato
         </label>
 
+        {/* controlli mirato */}
         {aimed && (
           <>
             <label className="flex items-center gap-2 text-sm text-zinc-300">
