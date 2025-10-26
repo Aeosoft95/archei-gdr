@@ -2,4 +2,29 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Base */
 body { font-family: system-ui, sans-serif; }
+
+/* ---- UI utilities (scheda & toolbar) ---- */
+.card       { @apply rounded-lg bg-zinc-900/60 border border-zinc-800; }
+.subcard    { @apply rounded-md border border-zinc-800 p-2 bg-zinc-900/40; }
+.row        { @apply rounded-md border border-zinc-800 p-2 bg-zinc-900/30; }
+
+.label      { @apply text-[11px] leading-none text-zinc-400 mb-1; }
+.meta       { @apply text-[11px] leading-none text-zinc-500; }
+.hint       { @apply text-[11px] leading-none text-zinc-400; }
+.chip       { @apply inline-flex items-center px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 text-[11px] leading-none; }
+.chip-link  { @apply chip hover:bg-zinc-700/80 cursor-pointer; }
+
+.input      { @apply w-full rounded-md bg-zinc-950 border border-zinc-800 px-2.5 py-1.5 text-sm outline-none focus:border-zinc-600; }
+
+.btn-base   { @apply inline-flex items-center justify-center rounded-md text-sm px-2.5 py-1.5 transition-colors; }
+.btn-primary{ @apply btn-base bg-zinc-700 hover:bg-zinc-600 text-white border border-zinc-700; }
+.btn-subtle { @apply btn-base bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700; }
+.btn-ghost  { @apply btn-base bg-transparent hover:bg-zinc-900 text-zinc-200 border border-zinc-800; }
+.btn-disabled{ @apply btn-base bg-zinc-900 text-zinc-500 border border-zinc-800 cursor-not-allowed; }
+
+/* Scrollbar leggera per liste (incantesimi, ecc.) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(39 39 42); border-radius: 8px; border: 2px solid rgb(24 24 27); }
+::-webkit-scrollbar-track { background: rgb(24 24 27); }
