@@ -1,7 +1,7 @@
 // src/pages/player/sheet.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SPELLS_DB } from "@/data/spells";
 
 /* ===== Tipi ===== */
@@ -15,7 +15,7 @@ type LearnedSpell = { id:string; refId:string; notes?:string };
 type PCData = {
   ident:{ name:string; race:string; clazz:string; level:number; portraitUrl?:string };
   attrs: Attrs;
-  quick:{ hp:number; foc:number; difMod?:number };
+  quick:{ hp:number; foc:number; difMod:number };
   abilities: Ability[]; weapons: Weapon[]; armors: Armor[]; spells: LearnedSpell[];
   notes?: string;
 };
@@ -23,8 +23,8 @@ type PCData = {
 /* ===== Utils ===== */
 const uid = () => Math.random().toString(36).slice(2,9);
 const clamp = (n:number, a:number, b:number) => Math.max(a, Math.min(b, n));
-function normStr(v:any, def=""){ return typeof v === "string" ? v : (v==null ? def : String(v)); }
-function normNum(v:any, def=0){ const n = Number(v); return Number.isFinite(n) ? n : def; }
+const nnum = (v:any, d=0) => (Number.isFinite(Number(v)) ? Number(v) : d);
+const nstr = (v:any, d="") => (typeof v==="string" ? v : (v==null?d:String(v)));
 
 const EMPTY_PC:PCData = {
   ident:{ name:"", race:"", clazz:"", level:1, portraitUrl:"" },
@@ -33,92 +33,65 @@ const EMPTY_PC:PCData = {
   abilities:[], weapons:[], armors:[], spells:[], notes:""
 };
 
-/* ===== Normalization (con shim legacy per mods.difMod) ===== */
-function normalizePC(inData:any): PCData {
-  const b = EMPTY_PC;
-
-  const abilities: Ability[] = Array.isArray(inData?.abilities) ? inData.abilities.map((a:any)=>({
-    id: normStr(a?.id, uid()),
-    name: normStr(a?.name),
-    rank: Math.max(0, Math.min(4, normNum(a?.rank, 0))) as 0|1|2|3|4,
-    desc: normStr(a?.desc),
-  })) : [];
-
-  const weapons: Weapon[] = Array.isArray(inData?.weapons) ? inData.weapons.map((w:any)=>({
-    id: normStr(w?.id, uid()),
-    name: normStr(w?.name),
-    notes: normStr(w?.notes),
-    damageSeg: normNum(w?.damageSeg, 1),
-    equipped: !!w?.equipped,
-  })) : [];
-
-  const armors: Armor[] = Array.isArray(inData?.armors)
-    ? inData.armors.map((a:any) => ({
-        id: normStr(a?.id, uid()),
-        name: normStr(a?.name),
-        bonusD6: normNum(a?.bonusD6, 0),
-        notes: normStr(a?.notes),
-        equipped: !!a?.equipped,
-      }))
-    : [];
-
-  const spells: LearnedSpell[] = Array.isArray(inData?.spells)
-    ? inData.spells.map((s:any) => ({
-        id: normStr(s?.id, uid()),
-        refId: normStr(s?.refId),
-        notes: normStr(s?.notes),
-      }))
-    : [];
-
-  // 🔧 Shim legacy: alcuni vecchi documenti usano mods.difMod → portalo in quick.difMod
-  const legacyDifMod = (inData?.mods && typeof inData.mods === "object")
-    ? normNum(inData?.mods?.difMod, NaN) : NaN;
-  const difMod = Number.isFinite(legacyDifMod)
-    ? legacyDifMod
-    : normNum(inData?.quick?.difMod, 0);
-
+/* ===== Normalizzazione super-semplice (NO localStorage) ===== */
+function normalizePC(raw:any): PCData {
+  const r = raw || {};
   return {
-    ident:  {
-      name: normStr(inData?.ident?.name, b.ident.name),
-      race: normStr(inData?.ident?.race, b.ident.race),
-      clazz: normStr(inData?.ident?.clazz, b.ident.clazz),
-      level: normNum(inData?.ident?.level, b.ident.level) || 1,
-      portraitUrl: normStr(inData?.ident?.portraitUrl, ""),
+    ident: {
+      name: nstr(r?.ident?.name),
+      race: nstr(r?.ident?.race),
+      clazz: nstr(r?.ident?.clazz),
+      level: nnum(r?.ident?.level, 1) || 1,
+      portraitUrl: nstr(r?.ident?.portraitUrl, ""),
     },
-    attrs:  {
-      FOR: normNum(inData?.attrs?.FOR, 0),
-      DES: normNum(inData?.attrs?.DES, 0),
-      COS: normNum(inData?.attrs?.COS, 0),
-      INT: normNum(inData?.attrs?.INT, 0),
-      SAP: normNum(inData?.attrs?.SAP, 0),
-      CAR: normNum(inData?.attrs?.CAR, 0),
+    attrs: {
+      FOR: nnum(r?.attrs?.FOR, 0),
+      DES: nnum(r?.attrs?.DES, 0),
+      COS: nnum(r?.attrs?.COS, 0),
+      INT: nnum(r?.attrs?.INT, 0),
+      SAP: nnum(r?.attrs?.SAP, 0),
+      CAR: nnum(r?.attrs?.CAR, 0),
     },
-    quick:  {
-      hp: normNum(inData?.quick?.hp, b.quick.hp),
-      foc: normNum(inData?.quick?.foc, b.quick.foc),
-      difMod, // ← sempre presente
+    quick: {
+      hp: nnum(r?.quick?.hp, 10),
+      foc: nnum(r?.quick?.foc, 3),
+      // shim legacy: mods.difMod → quick.difMod
+      difMod: Number.isFinite(Number(r?.quick?.difMod))
+        ? Number(r?.quick?.difMod)
+        : nnum(r?.mods?.difMod, 0),
     },
-    abilities, weapons, armors, spells,
-    notes: normStr(inData?.notes, ""),
+    abilities: Array.isArray(r?.abilities) ? r.abilities.map((a:any)=>({
+      id: nstr(a?.id, uid()),
+      name: nstr(a?.name),
+      rank: Math.max(0, Math.min(4, nnum(a?.rank, 0))) as 0|1|2|3|4,
+      desc: nstr(a?.desc,""),
+    })) : [],
+    weapons: Array.isArray(r?.weapons) ? r.weapons.map((w:any)=>({
+      id: nstr(w?.id, uid()),
+      name: nstr(w?.name),
+      notes: nstr(w?.notes,""),
+      damageSeg: nnum(w?.damageSeg, 1),
+      equipped: !!w?.equipped,
+    })) : [],
+    armors: Array.isArray(r?.armors) ? r.armors.map((a:any)=>({
+      id: nstr(a?.id, uid()),
+      name: nstr(a?.name),
+      bonusD6: nnum(a?.bonusD6, 0),
+      notes: nstr(a?.notes,""),
+      equipped: !!a?.equipped,
+    })) : [],
+    spells: Array.isArray(r?.spells) ? r.spells.map((s:any)=>({
+      id: nstr(s?.id, uid()),
+      refId: nstr(s?.refId),
+      notes: nstr(s?.notes,""),
+    })) : [],
+    notes: nstr(r?.notes,""),
   };
 }
 
 /* ===== Calcoli ===== */
-function derivedHP(level:number, COS:number){ return Math.max(1, 8 + COS + Math.max(0,level-1)*2); }
-function calcDIF(des:number, armor:number, mod:number=0){ return 10 + Math.max(0,des) + Math.max(0,armor) + (mod||0); }
-
-/* ===== Local backup ===== */
-const STORAGE_KEY = "pc:last";
-function readLocal(): PCData | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return normalizePC(JSON.parse(raw));
-  } catch { return null; }
-}
-function writeLocal(data: PCData) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
-}
+const derivedHP = (level:number, COS:number) => Math.max(1, 8 + COS + Math.max(0,level-1)*2);
+const calcDIF   = (des:number, armor:number, mod:number) => 10 + Math.max(0,des) + Math.max(0,armor) + (mod||0);
 
 /* ===== Pagina ===== */
 export default function SheetPage(){
@@ -126,54 +99,8 @@ export default function SheetPage(){
   const [loading,setLoading] = useState(true);
   const [saving,setSaving] = useState(false);
   const [status,setStatus] = useState<string>("");
-  const debTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* --- SAFETY BELT 1: normalizza TUTTO al mount (contro stati "mozzi") --- */
-  useEffect(() => {
-    setData(d => {
-      const fixed = { ...(d ?? {}) } as any;
-
-      if (!fixed.quick || typeof fixed.quick !== "object") fixed.quick = {};
-      fixed.quick = {
-        hp: Number.isFinite(Number(fixed.quick.hp)) ? Number(fixed.quick.hp) : 10,
-        foc: Number.isFinite(Number(fixed.quick.foc)) ? Number(fixed.quick.foc) : 3,
-        difMod: Number.isFinite(Number(fixed.quick.difMod)) ? Number(fixed.quick.difMod) : 0,
-      };
-
-      fixed.attrs = {
-        FOR: Number(fixed?.attrs?.FOR ?? 0),
-        DES: Number(fixed?.attrs?.DES ?? 0),
-        COS: Number(fixed?.attrs?.COS ?? 0),
-        INT: Number(fixed?.attrs?.INT ?? 0),
-        SAP: Number(fixed?.attrs?.SAP ?? 0),
-        CAR: Number(fixed?.attrs?.CAR ?? 0),
-      };
-
-      fixed.armors    = Array.isArray(fixed.armors)    ? fixed.armors    : [];
-      fixed.abilities = Array.isArray(fixed.abilities) ? fixed.abilities : [];
-      fixed.weapons   = Array.isArray(fixed.weapons)   ? fixed.weapons   : [];
-      fixed.spells    = Array.isArray(fixed.spells)    ? fixed.spells    : [];
-
-      return fixed as PCData;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* --- SAFETY BELT 2: se per qualsiasi motivo quick/difMod diventano undefined, ripristina --- */
-  useEffect(() => {
-    if (!data?.quick || typeof data.quick !== "object" || data.quick.difMod == null) {
-      setData(d => ({
-        ...(d ?? EMPTY_PC),
-        quick: {
-          hp: Number(d?.quick?.hp ?? 10),
-          foc: Number(d?.quick?.foc ?? 3),
-          difMod: Number(d?.quick?.difMod ?? 0),
-        },
-      }));
-    }
-  }, [data?.quick]);
-
-  // Load: API → fallback localStorage
+  // Carica SOLO da API
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -181,20 +108,12 @@ export default function SheetPage(){
         const r = await fetch("/api/player/sheet", { cache:"no-store", credentials:"include" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json().catch(()=> ({}));
-        const incoming = j?.data ? normalizePC(j.data) : null;
+        const incoming = j?.data ? normalizePC(j.data) : EMPTY_PC;
         if (!alive) return;
-
-        if (incoming) {
-          setData(incoming);
-          writeLocal(incoming); // sync cache locale
-        } else {
-          const local = readLocal();
-          setData(local ?? EMPTY_PC);
-        }
+        setData(incoming);
       } catch {
-        const local = readLocal();
-        setData(local ?? EMPTY_PC);
-        setStatus("Offline: caricata copia locale.");
+        setData(EMPTY_PC); // nessun crash se il server non risponde
+        setStatus("Offline (niente cache locale).");
       } finally {
         if (alive) setLoading(false);
       }
@@ -202,21 +121,13 @@ export default function SheetPage(){
     return () => { alive = false; };
   }, []);
 
-  // Auto-backup locale (debounced 500ms) ad ogni modifica
-  useEffect(() => {
-    if (loading) return;
-    if (debTimer.current) clearTimeout(debTimer.current);
-    debTimer.current = setTimeout(() => writeLocal(data), 500);
-    return () => { if (debTimer.current) clearTimeout(debTimer.current); };
-  }, [data, loading]);
+  // Calcoli sicuri
+  const equippedArmor = useMemo(()=> (data.armors||[]).find(a=>a.equipped), [data.armors]);
+  const armorBonus = nnum(equippedArmor?.bonusD6, 0);
+  const sugHP = useMemo(()=> derivedHP(nnum(data.ident.level,1), nnum(data.attrs.COS,0)), [data.ident.level, data.attrs.COS]);
+  const dif   = useMemo(()=> calcDIF(nnum(data.attrs.DES,0), armorBonus, nnum(data.quick.difMod,0)), [data.attrs.DES, armorBonus, data.quick.difMod]);
 
-  // Calcoli rapidi (tutti con fallback sicuri)
-  const equippedArmor = useMemo(()=> (data?.armors || []).find(a=>a.equipped), [data?.armors]);
-  const armorBonus = equippedArmor?.bonusD6 ?? 0;
-  const sugHP = useMemo(()=> derivedHP(data?.ident?.level ?? 1, data?.attrs?.COS ?? 0), [data?.ident?.level, data?.attrs?.COS]);
-  const dif   = useMemo(()=> calcDIF(data?.attrs?.DES ?? 0, armorBonus, data?.quick?.difMod ?? 0), [data?.attrs?.DES, armorBonus, data?.quick?.difMod]);
-
-  /* ===== Spells ===== */
+  /* ===== Incantesimi: filtri locali ===== */
   const [spellQuery,setSpellQuery] = useState("");
   const [spellKind,setSpellKind]   = useState<"all"|SpellKind>("all");
   const [spellTier,setSpellTier]   = useState<"all"|SpellTier>("all");
@@ -236,40 +147,37 @@ export default function SheetPage(){
   },[spellKind,spellTier,spellQuery]);
 
   function addSpell(ref:SpellEntry){
-    if(data.spells.some(s=>s.refId===ref.id)) return;
+    if((data.spells||[]).some(s=>s.refId===ref.id)) return;
     setData(d=>({...d, spells:[...d.spells, { id:uid(), refId:ref.id, notes:"" }]}));
   }
   function removeSpell(id:string){ setData(d=>({...d, spells:d.spells.filter(s=>s.id!==id)})); }
 
-  /* ===== Save ===== */
+  // SALVA: SOLO POST → se fallisce, mostra messaggio, NON tocca local
   async function save() {
     setSaving(true);
     setStatus("");
     try {
-      const payload = normalizePC({
+      const payload:PCData = normalizePC({
         ...data,
-        ident: { ...data.ident, level: clamp(data.ident.level ?? 1, 1, 50) },
+        ident: { ...data.ident, level: clamp(nnum(data.ident.level,1), 1, 50) },
         attrs: {
-          FOR: clamp(data.attrs.FOR ?? 0, 0, 20),
-          DES: clamp(data.attrs.DES ?? 0, 0, 20),
-          COS: clamp(data.attrs.COS ?? 0, 0, 20),
-          INT: clamp(data.attrs.INT ?? 0, 0, 20),
-          SAP: clamp(data.attrs.SAP ?? 0, 0, 20),
-          CAR: clamp(data.attrs.CAR ?? 0, 0, 20),
+          FOR: clamp(nnum(data.attrs.FOR,0), 0, 20),
+          DES: clamp(nnum(data.attrs.DES,0), 0, 20),
+          COS: clamp(nnum(data.attrs.COS,0), 0, 20),
+          INT: clamp(nnum(data.attrs.INT,0), 0, 20),
+          SAP: clamp(nnum(data.attrs.SAP,0), 0, 20),
+          CAR: clamp(nnum(data.attrs.CAR,0), 0, 20),
         },
         quick: {
-          hp: clamp(data.quick?.hp ?? 0, 0, 999),
-          foc: clamp(data.quick?.foc ?? 0, 0, 99),
-          difMod: clamp(data.quick?.difMod ?? 0, -20, 50),
+          hp: clamp(nnum(data.quick.hp,10), 0, 999),
+          foc: clamp(nnum(data.quick.foc,3), 0, 99),
+          difMod: clamp(nnum(data.quick.difMod,0), -20, 50),
         },
         abilities: (data.abilities||[]).map(a=>({ ...a, id:a.id||uid(), rank: Math.max(0, Math.min(4, a.rank)) as 0|1|2|3|4 })),
-        weapons: (data.weapons||[]).map(w=>({ ...w, id:w.id||uid(), damageSeg: w.damageSeg ?? 1 })),
-        armors: (data.armors||[]).map(a=>({ ...a, id:a.id||uid(), bonusD6: a.bonusD6 ?? 0 })),
-        spells: (data.spells||[]).map(s=>({ ...s, id:s.id||uid() })),
+        weapons:   (data.weapons||[]).map(w=>({ ...w, id:w.id||uid(), damageSeg: nnum(w.damageSeg,1) })),
+        armors:    (data.armors||[]).map(a=>({ ...a, id:a.id||uid(), bonusD6: nnum(a.bonusD6,0) })),
+        spells:    (data.spells||[]).map(s=>({ ...s, id:s.id||uid() })),
       });
-
-      // backup locale immediato
-      writeLocal(payload);
 
       const r = await fetch("/api/player/sheet", {
         method: "POST",
@@ -284,21 +192,24 @@ export default function SheetPage(){
         const jr = await r.json();
         ok = ok && (jr?.ok !== false);
         if (jr?.message) msg = String(jr.message);
-      } catch { /* body non json, pazienza */ }
+        // se il server rimanda indietro dati, ri-normalizziamo e li mettiamo in stato
+        if (jr?.data) setData(normalizePC(jr.data));
+      } catch {
+        /* risposta non-json: va bene lo stesso */
+      }
 
-      setStatus(ok ? "Salvato ✅" : (msg || "Salvato in locale (server non ha confermato)"));
-    } catch {
-      setStatus("Offline: salvato in locale 💾");
+      setStatus(ok ? "Salvato ✅" : (msg || "Salvataggio non confermato ❗"));
+    } catch (e:any) {
+      setStatus("Errore rete: non salvato ❌");
     } finally {
       setSaving(false);
       setTimeout(()=> setStatus(""), 2500);
     }
   }
 
-  function resetLocal() {
-    if (!confirm("Sicuro di resettare la scheda corrente?")) return;
+  function resetAll() {
+    if (!confirm("Sicuro di resettare la scheda corrente (non salva sul server)?")) return;
     setData(EMPTY_PC);
-    writeLocal(EMPTY_PC);
   }
 
   if (loading) {
@@ -317,7 +228,7 @@ export default function SheetPage(){
           <span className="text-sm text-zinc-300 font-medium">Scheda Personaggio</span>
           <div className="flex items-center gap-2">
             {status && <span className="text-xs text-zinc-400">{status}</span>}
-            <button className="btn-subtle" onClick={resetLocal}>Reset</button>
+            <button className="btn-subtle" onClick={resetAll}>Reset</button>
             <button className="btn-primary" onClick={save} disabled={saving}>{saving? "Salvo…" : "Salva"}</button>
           </div>
         </div>
@@ -332,7 +243,7 @@ export default function SheetPage(){
               <Field label="Nome"><input className="input" value={data.ident.name} onChange={e=>setData(d=>({...d,ident:{...d.ident,name:e.target.value}}))}/></Field>
               <Field label="Razza"><input className="input" value={data.ident.race} onChange={e=>setData(d=>({...d,ident:{...d.ident,race:e.target.value}}))}/></Field>
               <Field label="Classe"><input className="input" value={data.ident.clazz} onChange={e=>setData(d=>({...d,ident:{...d.ident,clazz:e.target.value}}))}/></Field>
-              <Field label="Livello"><input type="number" min={1} className="input text-center" value={data.ident.level} onChange={e=>setData(d=>({...d,ident:{...d.ident,level:parseInt(e.target.value||"1")}}))}/></Field>
+              <Field label="Livello"><input type="number" min={1} className="input text-center" value={data.ident.level} onChange={e=>setData(d=>({...d,ident:{...d.ident,level:nnum(e.target.value,1)}}))}/></Field>
               <div className="sm:col-span-2 lg:col-span-4">
                 <div className="label">Ritratto (URL)</div>
                 <input className="input" placeholder="https://…" value={data.ident.portraitUrl||""} onChange={e=>setData(d=>({...d, ident:{...d.ident, portraitUrl:e.target.value}}))}/>
@@ -350,22 +261,22 @@ export default function SheetPage(){
         <section className="grid md:grid-cols-3 gap-3">
           <QuickCard title="HP" icon="❤️">
             <div className="flex items-center gap-2">
-              <input type="number" className="input text-center w-24" value={data.quick?.hp ?? 0} onChange={e=>setData(d=>({...d, quick:{...d.quick, hp:parseInt(e.target.value||"0")}}))}/>
+              <input type="number" className="input text-center w-24" value={data.quick.hp} onChange={e=>setData(d=>({...d, quick:{...d.quick, hp:nnum(e.target.value,10)}}))}/>
               <span className="hint">Suggerito <b className="text-zinc-200">{sugHP}</b></span>
             </div>
           </QuickCard>
           <QuickCard title="DIF" icon="🛡️">
             <div className="flex items-baseline gap-2">
               <div className="text-xl font-semibold">{dif}</div>
-              <span className="hint">10 + DES ({data.attrs?.DES ?? 0}) + Arm. ({armorBonus}d6) + Mod.</span>
+              <span className="hint">10 + DES ({data.attrs.DES}) + Arm. ({armorBonus}d6) + Mod.</span>
             </div>
             <div className="mt-1 flex items-center gap-2">
               <span className="label">Mod.</span>
-              <input type="number" className="input text-center w-24" value={data.quick?.difMod ?? 0} onChange={e=>setData(d=>({...d, quick:{...d.quick, difMod:parseInt(e.target.value||"0")}}))}/>
+              <input type="number" className="input text-center w-24" value={data.quick.difMod} onChange={e=>setData(d=>({...d, quick:{...d.quick, difMod:nnum(e.target.value,0)}}))}/>
             </div>
           </QuickCard>
           <QuickCard title="FOC" icon="✨">
-            <input type="number" className="input text-center w-24" value={data.quick?.foc ?? 0} onChange={e=>setData(d=>({...d, quick:{...d.quick, foc:parseInt(e.target.value||"0")}}))}/>
+            <input type="number" className="input text-center w-24" value={data.quick.foc} onChange={e=>setData(d=>({...d, quick:{...d.quick, foc:nnum(e.target.value,3)}}))}/>
           </QuickCard>
         </section>
 
@@ -375,7 +286,7 @@ export default function SheetPage(){
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mt-1">
             {(["FOR","DES","COS","INT","SAP","CAR"] as (keyof Attrs)[]).map(k=>(
               <Field key={k} label={k}>
-                <input type="number" className="input text-center" value={data.attrs?.[k] ?? 0} onChange={e=>setData(d=>({...d, attrs:{...d.attrs, [k]:parseInt(e.target.value||"0")}}))}/>
+                <input type="number" className="input text-center" value={data.attrs[k]} onChange={e=>setData(d=>({...d, attrs:{...d.attrs, [k]:nnum(e.target.value,0)}}))}/>
               </Field>
             ))}
           </div>
@@ -502,8 +413,8 @@ export default function SheetPage(){
                     <div className="grid grid-cols-2 gap-2">
                       <Field label="Nome"><input className="input" value={w.name} onChange={e=>setData(d=>({...d, weapons:d.weapons.map(x=>x.id===w.id?{...x, name:e.target.value}:x)}))}/></Field>
                       <Field label="Danno (seg)">
-                        <input type="number" className="input text-center" value={w.damageSeg ?? 1}
-                          onChange={e=>setData(d=>({...d, weapons:d.weapons.map(x=>x.id===w.id?{...x, damageSeg:parseInt(e.target.value||"1")}:x)}))}/>
+                        <input type="number" className="input text-center" value={nnum(w.damageSeg,1)}
+                          onChange={e=>setData(d=>({...d, weapons:d.weapons.map(x=>x.id===w.id?{...x, damageSeg:nnum(e.target.value,1)}:x)}))}/>
                       </Field>
                     </div>
                     <div className="label mt-1">Note</div>
@@ -533,8 +444,8 @@ export default function SheetPage(){
                     <div className="grid grid-cols-2 gap-2">
                       <Field label="Nome"><input className="input" value={a.name} onChange={e=>setData(d=>({...d, armors:d.armors.map(x=>x.id===a.id?{...x, name:e.target.value}:x)}))}/></Field>
                       <Field label="Bonus DIF (d6)">
-                        <input type="number" className="input text-center" value={a.bonusD6}
-                          onChange={e=>setData(d=>({...d, armors:d.armors.map(x=>x.id===a.id?{...x, bonusD6:parseInt(e.target.value||"0")}:x)}))}/>
+                        <input type="number" className="input text-center" value={nnum(a.bonusD6,0)}
+                          onChange={e=>setData(d=>({...d, armors:d.armors.map(x=>x.id===a.id?{...x, bonusD6:nnum(e.target.value,0)}:x)}))}/>
                       </Field>
                     </div>
                     <div className="label mt-1">Note</div>
