@@ -6,21 +6,16 @@ import DiceRoller from "../tools/DiceRoller";
 import ChatPanel from "./ChatPanel";
 import { Button } from "../ui/button";
 
-// Mini scheda
-import MiniCharacterCard from "@/components/sheet/MiniCharacterCard";
-import type { PCData } from "@/types/character";
-import { EMPTY_PC } from "@/types/character";
-
 type Props = {
   roomCode: string; // es. ABC123
   isGM?: boolean;
 };
 
-type TabKey = "chat" | "dice" | "sheet" | "inventory" | "notes";
+type TabKey = "chat" | "dice" | "inventory" | "notes";
 
 export default function RoomToolbar({ roomCode, isGM }: Props) {
-  const storageKeyOpen  = useMemo(() => `toolbar-open:${roomCode}`,  [roomCode]);
-  const storageKeyTab   = useMemo(() => `toolbar-tab:${roomCode}`,   [roomCode]);
+  const storageKeyOpen = useMemo(() => `toolbar-open:${roomCode}`, [roomCode]);
+  const storageKeyTab = useMemo(() => `toolbar-tab:${roomCode}`, [roomCode]);
   const storageKeyWidth = useMemo(() => `toolbar-width:${roomCode}`, [roomCode]);
 
   const [open, setOpen] = useState(false);
@@ -29,38 +24,6 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
 
   const asideRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
-
-  // ---- Mini-scheda: fetch lazy quando serve ----
-  const [pc, setPc] = useState<PCData | null>(null);
-  const [pcLoading, setPcLoading] = useState(false);
-  const [pcError, setPcError] = useState<string | null>(null);
-  const hasFetchedRef = useRef(false);
-
-  async function loadPc() {
-    if (pcLoading) return;
-    setPcLoading(true);
-    setPcError(null);
-    try {
-      const r = await fetch("/api/player/sheet", { cache: "no-store" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json().catch(() => ({}));
-      setPc(j?.data ?? null);
-      hasFetchedRef.current = true;
-    } catch (e: any) {
-      setPc(null);
-      setPcError(e?.message || "Errore caricamento scheda");
-    } finally {
-      setPcLoading(false);
-    }
-  }
-
-  // avvia il fetch quando entri nel tab "sheet" la prima volta
-  useEffect(() => {
-    if (tab === "sheet" && !hasFetchedRef.current) {
-      loadPc();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
 
   // ---- ripristina stato ----
   useEffect(() => {
@@ -76,24 +39,28 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
     } catch {}
   }, [storageKeyOpen, storageKeyTab, storageKeyWidth]);
 
-  // ---- persisti open/tab ----
+  // ---- persisti stato ----
   useEffect(() => {
-    try { localStorage.setItem(storageKeyOpen, open ? "1" : "0"); } catch {}
+    try {
+      localStorage.setItem(storageKeyOpen, open ? "1" : "0");
+    } catch {}
   }, [open, storageKeyOpen]);
 
   useEffect(() => {
-    try { localStorage.setItem(storageKeyTab, tab); } catch {}
+    try {
+      localStorage.setItem(storageKeyTab, tab);
+    } catch {}
   }, [tab, storageKeyTab]);
 
-  // ---- persisti width solo se definita ----
   useEffect(() => {
     if (width != null && Number.isFinite(width)) {
-      try { localStorage.setItem(storageKeyWidth, String(width)); } catch {}
+      try {
+        localStorage.setItem(storageKeyWidth, String(width));
+      } catch {}
     }
   }, [width, storageKeyWidth]);
 
-  // ---- larghezza responsive di base (se non impostata) ----
-  // clamp: min 280px, prefer 32vw, max 480px
+  // ---- larghezza di base ----
   const cssWidth = width ? `${width}px` : "clamp(280px, 32vw, 480px)";
 
   // ---- drag per ridimensionare ----
@@ -102,7 +69,6 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
       if (!draggingRef.current) return;
       const screenW = window.innerWidth;
       const x = e.clientX;
-      // maniglia sul bordo sinistro della sidebar: calcolo width da destra
       const newW = Math.min(600, Math.max(260, screenW - x));
       setWidth((prev) => (prev !== newW ? newW : prev));
       e.preventDefault();
@@ -112,7 +78,6 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
-
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => {
@@ -121,9 +86,10 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
     };
   }, []);
 
-  // reset rapido della larghezza salvata (doppio click sulla maniglia)
   const resetWidth = () => {
-    try { localStorage.removeItem(storageKeyWidth); } catch {}
+    try {
+      localStorage.removeItem(storageKeyWidth);
+    } catch {}
     setWidth(null);
   };
 
@@ -160,51 +126,35 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
                 )}
               </div>
             </div>
-            <Button variant="secondary" onClick={() => setOpen(false)} aria-label="Chiudi la toolbar">
+            <Button
+              variant="secondary"
+              onClick={() => setOpen(false)}
+              aria-label="Chiudi la toolbar"
+            >
               Chiudi
             </Button>
           </div>
 
           {/* tabs */}
           <div className="px-3 pt-3 flex gap-2 flex-wrap">
-            <TabButton active={tab === "chat"} onClick={() => setTab("chat")}>💬 Chat</TabButton>
-            <TabButton active={tab === "dice"} onClick={() => setTab("dice")}>🎲 Dadi</TabButton>
-            <TabButton active={tab === "sheet"} onClick={() => setTab("sheet")}>📄 Scheda</TabButton>
-            <TabButton active={tab === "inventory"} onClick={() => setTab("inventory")}>🎒 Inventario</TabButton>
-            <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>📝 Note</TabButton>
+            <TabButton active={tab === "chat"} onClick={() => setTab("chat")}>
+              💬 Chat
+            </TabButton>
+            <TabButton active={tab === "dice"} onClick={() => setTab("dice")}>
+              🎲 Dadi
+            </TabButton>
+            <TabButton active={tab === "inventory"} onClick={() => setTab("inventory")}>
+              🎒 Inventario
+            </TabButton>
+            <TabButton active={tab === "notes"} onClick={() => setTab("notes")}>
+              📝 Note
+            </TabButton>
           </div>
 
-          {/* content */}
+          {/* contenuti */}
           <div className="flex-1 overflow-auto p-3 min-w-0">
             {tab === "chat" && <ChatPanel />}
             {tab === "dice" && <DiceRoller />}
-
-            {tab === "sheet" && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-zinc-400">Scheda rapida</div>
-                  <div className="flex items-center gap-2">
-                    <a
-                      className="text-sm px-2 py-1 rounded border border-zinc-700 hover:bg-zinc-800"
-                      href="/player/sheet"
-                    >
-                      Apri scheda completa
-                    </a>
-                    <Button variant="secondary" onClick={loadPc} disabled={pcLoading}>
-                      {pcLoading ? "Aggiorno…" : "Aggiorna"}
-                    </Button>
-                  </div>
-                </div>
-
-                {pcError && (
-                  <div className="text-sm text-red-400 border border-red-900/50 rounded-lg p-2">
-                    {pcError}
-                  </div>
-                )}
-
-                <MiniCharacterCard data={pc ?? EMPTY_PC} />
-              </div>
-            )}
 
             {tab === "inventory" && (
               <PlaceholderCard
@@ -222,7 +172,7 @@ export default function RoomToolbar({ roomCode, isGM }: Props) {
           </div>
         </div>
 
-        {/* maniglia di resize (bordo sinistro) */}
+        {/* maniglia di resize */}
         <div
           title="Trascina per cambiare larghezza (doppio clic per reset)"
           className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
