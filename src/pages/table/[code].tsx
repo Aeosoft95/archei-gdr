@@ -9,6 +9,7 @@ import { ChatProvider } from "@/lib/chat/bus";
 import RoomToolbar from "@/components/table/RoomToolbar";
 import AutoScaler from "@/components/layout/AutoScaler";
 import MiniChat from "@/components/table/MiniChat";
+import RoomTopActions from "@/components/table/RoomTopActions"; // ⬅️ aggiunto
 
 type Room = {
   id: string;
@@ -78,6 +79,8 @@ export default function TableRoom() {
           <h1 className="text-2xl font-semibold">
             {room.title} <span className="text-zinc-400">#{room.inviteCode}</span>
           </h1>
+
+          {/* ⬇️ Azioni top della Room: qui c’è il bottone “Scheda” */}
           <div className="flex items-center gap-2">
             {room.me.isGM && (
               <span className="px-2 py-1 rounded bg-amber-500/20 text-amber-300 text-xs uppercase tracking-wide">
@@ -94,6 +97,9 @@ export default function TableRoom() {
             >
               Copia invito
             </button>
+
+            {/* Bottone Scheda (apre il pannello dal provider) */}
+            <RoomTopActions />
           </div>
         </div>
 
